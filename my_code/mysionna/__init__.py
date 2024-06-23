@@ -1,1 +1,1 @@
-from . import channel
+from . import torch_version
