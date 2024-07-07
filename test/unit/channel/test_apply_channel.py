@@ -11,6 +11,7 @@ except ImportError as e:
 
 from sionna.channel import ApplyTimeChannel, ApplyOFDMChannel
 
+
 import pytest
 import unittest
 import numpy as np

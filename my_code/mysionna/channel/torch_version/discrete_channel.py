@@ -1,6 +1,59 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Function
+from my_code.mysionna.channel.torch_version.utils import expand_to_rank
+
+
+class CustomOperations:
+    
+    class CustomXOR(Function):
+        @staticmethod
+        def forward(ctx, a, b):
+            ctx.save_for_backward(a, b)
+            if a.dtype in (torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64):
+                z = (a + b) % 2
+            else:
+                z = torch.abs(a - b)
+            return z
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            return grad_output, grad_output
+    # STEBinarizer（Straight-Through Estimator Binarizer）是一种在神经网络中用于处理二值化操作的技术。
+    # STE代表Straight-Through Estimator，它是一种用于在反向传播中处理不可微操作的技术。
+    class STEBinarizer(Function):
+        @staticmethod
+        def forward(ctx, x):
+            ctx.save_for_backward(x)
+            z = torch.where(x < 0.5, torch.tensor(0.0, device=x.device), torch.tensor(1.0, device=x.device))
+            return z
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            return grad_output
+    
+    class SampleErrors(torch.nn.Module):
+        def __init__(self, eps=1e-10, temperature=1.0):
+            super().__init__()
+            self._eps = eps
+            self._temperature = temperature
+
+        def forward(self, pb, shape):
+            u1 = torch.rand(shape, dtype=torch.float32)
+            u2 = torch.rand(shape, dtype=torch.float32)
+            u = torch.stack((u1, u2), dim=-1)
+
+            # 采样Gumbel分布
+            q = -torch.log(-torch.log(u + self._eps) + self._eps)
+            p = torch.stack((pb, 1 - pb), dim=-1).unsqueeze(1).expand(shape[0], shape[1], 2)
+            a = (torch.log(p + self._eps) + q) / self._temperature
+
+            # 应用softmax
+            e_cat = F.softmax(a, dim=-1)
+
+            # 通过直通估计器对最终值进行二值化
+            return CustomOperations.STEBinarizer.apply(e_cat[..., 0])
 
 class BinaryMemorylessChannel(nn.Module):
     def __init__(self, return_llrs=False, bipolar_input=False, llr_max=100., dtype=torch.float32, **kwargs):
@@ -56,6 +109,9 @@ class BinaryMemorylessChannel(nn.Module):
         """Temperature for Gumble-softmax trick."""
         assert value >= 0, 'temperature cannot be negative.'
         self._temperature = torch.tensor(value, dtype=torch.float32)
+    #########################
+    # Utility methods
+    #########################
 
     def _check_inputs(self, x):
         """Check input x for consistency, i.e., verify
@@ -69,13 +125,15 @@ class BinaryMemorylessChannel(nn.Module):
             # input datatype consistency should be only evaluated once
             self.check_input = False
 
-    def _custom_xor(self, a, b):
-        """Straight through estimator for XOR."""
-        return torch.abs(a - b)
+    # 使用方法
+    @staticmethod
+    def custom_xor(a, b):
+        return CustomOperations.CustomXOR.apply(a, b)       
 
-    def _ste_binarizer(self, x):
+    @staticmethod
+    def ste_binarizer(self, x):
         """Straight through binarizer to quantize bits to int values."""
-        return torch.where(x < 0.5, torch.tensor(0., dtype=self.dtype), torch.tensor(1., dtype=self.dtype))
+        return CustomOperations.STEBinarizer.apply(x)
 
     def _sample_errors(self, pb, shape):
         """Samples binary error vector with given error probability e.
@@ -97,45 +155,88 @@ class BinaryMemorylessChannel(nn.Module):
 
         # binarize final values via straight-through estimator
         return self._ste_binarizer(e_cat[..., 0])  # only take the first class
+    
+    #########################
+    # Keras layer functions
+    #########################
 
-    def forward(self, x, pb):
+    # 这段代码定义了一个 build 方法了，用于验证输入的形状是否正确
+    # 它主要检查第二个输入（错误概率 pb）的形状，确保其最后一维的长度为 2
+
+    def build(self, input_shapes):
+        """Verify correct input shapes"""
+
+        pb_shapes = input_shapes[1]
+        # allow tuple of scalars as alternative input
+        if isinstance(pb_shapes, (tuple, list)):
+            if not len(pb_shapes) == 2:
+                raise ValueError("Last dim of pb must be of length 2.")
+        else:
+            if len(pb_shapes) > 0:
+                if not pb_shapes[-1] == 2:
+                    raise ValueError("Last dim of pb must be of length 2.")
+            else:
+                raise ValueError("Last dim of pb must be of length 2.")
+            
+    def call(self, inputs):
+        """Apply discrete binary memoryless channel to inputs."""
+
+        x, pb = inputs
+
         # allow pb to be a tuple of two scalars
         if isinstance(pb, (tuple, list)):
             pb0 = pb[0]
             pb1 = pb[1]
         else:
-            pb0 = pb[..., 0]
-            pb1 = pb[..., 1]
-
-        # clip for numerical stability
-        pb0 = torch.clamp(pb0, 0., 1.).float()
-        pb1 = torch.clamp(pb1, 0., 1.).float()
+            pb0 = pb[...,0]
+            pb1 = pb[...,1]
+        
+        # 假设pb0和pb1是PyTorch张量
+        pb0 = pb0.float()  # 确保pb0是浮点数
+        pb1 = pb1.float()  # 确保pb1是浮点数
+        pb0 = torch.clamp(pb0, 0., 1.)  # 将pb0的值限制在0和1之间
+        pb1 = torch.clamp(pb1, 0., 1.)  # 将pb1的值限制在0和1之间
 
         # check x for consistency (binary, bipolar)
         self._check_inputs(x)
 
-        e0 = self._sample_errors(pb0, x.shape)
+        e0 = self._sample_errors(pb0,x.shape)
         e1 = self._sample_errors(pb1, x.shape)
 
-        if self.bipolar_input:
-            neutral_element = torch.tensor(-1., dtype=self.dtype)
+        if self._bipolar_input:
+            neutral_element = torch.tensor(-1, dtype=x.dtype)
         else:
-            neutral_element = torch.tensor(0., dtype=self.dtype)
+            neutral_element = torch.tensor(0, dtype=x.dtype)    
 
-        e = torch.where(x == neutral_element, e0, e1).type(self.dtype)
+        # mask e0 and e1 with input such that e0 only applies where x==0    
+        e = torch.where(x == neutral_element, e0, e1)
+        e = e.to(dtype=x.dtype)
 
-        if self.bipolar_input:
-            y = x * (-2 * e + 1)
+        if self._bipolar_input:
+            # flip signs for bipolar case
+            y = x * (-2*e + 1)
         else:
-            y = self._custom_xor(x, e)
+            # XOR for binary case
+            y = self.custom_xor(x, e)
 
-        if self.return_llrs:
-            if not self.bipolar_input:
+        # if LLRs should be returned
+        if self._return_llrs:
+            if not self._bipolar_input:
                 y = 2 * y - 1  # transform to bipolar
+            # Remark: Sionna uses the logit definition log[p(x=1)/p(x=0)]
+            # 计算LLRs的组成部分
+            y0 = -(torch.log(pb1 + self._eps) - torch.log(1 - pb0 - self._eps))
+            y1 = (torch.log(1 - pb1 - self._eps) - torch.log(pb0 + self._eps))
 
-            y0 = - (torch.log(pb1 + self.eps) - torch.log(1 - pb0 - self.eps))
-            y1 = (torch.log(1 - pb1 - self.eps) - torch.log(pb0 + self.eps))
-            y = torch.where(y == 1, y1, y0) * y
-            y = torch.clamp(y, -self.llr_max, self.llr_max)
+            # multiply by y to keep gradient
+            # 使用torch.where实现条件选择
+            y = torch.where(y == 1, y1, y0).to(dtype=y.dtype) * y
+
+            # and clip output llrs
+            # 将LLR的值限制在范围内
+            y = torch.clamp(y, min=-self._llr_max, max=self._llr_max)        
 
         return y
+
+
+                 
