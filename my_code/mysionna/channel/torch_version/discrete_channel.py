@@ -57,7 +57,7 @@ class CustomOperations:
 
 class BinaryMemorylessChannel(nn.Module):
     def __init__(self, return_llrs=False, bipolar_input=False, llr_max=100., dtype=torch.float32, **kwargs):
-        super().__init__(**kwargs)
+        super(BinaryMemorylessChannel,self).__init__(**kwargs)
 
         assert isinstance(return_llrs, bool), "return_llrs must be bool."
         self.return_llrs = return_llrs
@@ -178,7 +178,7 @@ class BinaryMemorylessChannel(nn.Module):
             else:
                 raise ValueError("Last dim of pb must be of length 2.")
             
-    def call(self, inputs):
+    def forward(self, inputs):
         """Apply discrete binary memoryless channel to inputs."""
 
         x, pb = inputs
@@ -238,5 +238,125 @@ class BinaryMemorylessChannel(nn.Module):
 
         return y
 
+class BinarySymmetricChannel(BinaryMemorylessChannel):
+    def __init__(self,return_llrs=False,bipolar_input=False,llr_max=100.,dtype=torch.float32,**kwargs):
+        #继承父类的__init__()
+        super(BinarySymmetricChannel,self).__init__(return_llrs=return_llrs,
+                         bipolar_input=bipolar_input,
+                         llr_max=llr_max,
+                         dtype=dtype,
+                         **kwargs)
+    #########################
+    # Keras layer functions
+    #########################
 
-                 
+    def build(self,input_shapes):
+        """"Verify correct input shapes"""
+        pass # nothing to verify here
+    def forward(self,inputs):
+        """Apply discrete binary symmetric channel, i.e., randomly flip
+        bits with probability pb."""
+        """"应用离散二进制对称信道,即以pb概率随机翻转位"""
+
+        x,pb = inputs
+
+        # the BSC is implemented by calling the DMC with symmetric pb
+        # BSC（二元对称信道）是通过使用对称的pb（比特翻转概率）调用DMC（离散记忆少信道）来实现的
+        # 这里的“对称的pb”意味着信道的翻转概率p对于输入0和1是相同的，即信道以相同的概率将输入0翻转为1，或将输入1翻转为0。
+
+        """"在二元对称信道(BSC)中,通常有两种状态:输入0被保持为0,或被翻转为1;输入1被保持为1,或被翻转为0。
+        如果翻转概率p对于两种输入都是相同的,那么信道就是对称的。
+
+        在实现上,可以构建一个离散记忆少信道(DMC),并设置其状态转移概率矩阵为对称的,以此来模拟BSC的行为。
+
+        在数学上,如果用p表示翻转概率,那么BSC的状态转移概率可以表示为:
+        从状态0(输入0)翻转到状态1的概率是p   从状态1(输入1)翻转到状态0的概率也是p  保持原始状态的概率是1-p"""
+        pb = pb.to(x.dtype)
+        pb = torch.stack((pb,pb), dim=-1)
+        y = super(BinarySymmetricChannel,self).forward((x,pb))
+
+        return y
+
+class BinaryZChannel(nn.Module):
+    def __init__(self, return_llrs=False, bipolar_input=False,llr_max=100.,dtype=torch.float32, **kwargs):
+
+        super(BinaryZChannel,self).__init__(return_llrs=return_llrs,
+                         bipolar_input=bipolar_input,
+                         llr_max=llr_max,
+                         dtype=dtype,
+                         **kwargs)
+    #########################
+    # Keras layer functions
+    #########################
+    def build(self, input_shapes):
+        """Verify correct input shapes"""
+        pass # nothing to verify here
+
+    def forward(self, inputs):
+        """Apply discrete binary symmetric channel, i.e., randomly flip
+        bits with probability pb."""
+
+        x, pb = inputs
+
+        # the Z is implemented by calling the DMC with p(1|0)=0
+        pb = pb.to(x.type)
+        pb = torch.stack((torch.zeros_like(pb), pb), dim=-1)
+        y = super(BinaryZChannel, self).forward((x, pb))
+
+        return y        
+  
+
+class BinaryErasureChannel(BinaryMemorylessChannel):
+    def __init__(self, return_llrs=False, bipolar_input=False, llr_max=100, dtype=torch.float32):
+        super().__init__()
+        self.return_llrs = return_llrs
+        self.bipolar_input = bipolar_input
+        self.llr_max = llr_max
+        self.dtype = dtype
+
+        assert dtype in (torch.float16, torch.float32, torch.float64,
+                         torch.int8, torch.int16, torch.int32, torch.int64), \
+               "Unsigned integers are currently not supported."
+    #########################
+    # Keras layer functions
+    #########################
+
+    def forward(self, inputs):
+
+        x,pb = inputs
+
+
+        # Example validation of input x
+        if not self.bipolar_input:
+            assert torch.all((x == 0) | (x == 1)), "Input x must be binary (0 or 1)."
+        else:
+            assert torch.all((x == -1) | (x == 1)), "Input x must be bipolar (-1 or 1)."
+
+        # Example validation of pb
+        # clip for numerical stability
+        pb = pb.float().clamp(0., 1.)
+
+        # sample erasure pattern
+        e = self._sample_errors(pb, x.size())
+
+        # if LLRs should be returned
+        # remark: the Sionna logit definition is llr = log[p(x=1)/p(x=0)]
+        if self.return_llrs:
+            if not self.bipolar_input:
+                x = 2 * x - 1
+            x = x.to(torch.float32) * self.llr_max  # calculate llrs
+
+            # erase positions by setting llrs to 0
+            y = torch.where(e == 1, torch.tensor(0, dtype=torch.float32), x)
+        else:
+            erased_element = torch.tensor(0, dtype=x.dtype) if self.bipolar_input else torch.tensor(-1, dtype=x.dtype)
+            y = torch.where(e == 0, x, erased_element)
+
+        return y
+
+    def _sample_errors(self, pb, shape):
+        u = torch.rand(shape)
+        e = (u < pb).float()
+        return e
+
+
