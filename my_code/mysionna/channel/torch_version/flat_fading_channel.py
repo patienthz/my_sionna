@@ -80,7 +80,87 @@ class ApplyFlatFadingChannel(nn.Module):
     def __init__(self, add_awgn=True, dtype=torch.complex64, **kwargs):
         super().__init__(requires_grad=False, dtype=dtype, **kwargs)
         self._add_awgn = add_awgn
+        if self._add_awgn:
+            self.awgn = AWGN(dtype=dtype)
     
 
-    def forward(self,)
+    def forward(self,inputs):
+        if self._add_awgn:
+            x, h, no = inputs
+        else:
+            x, h = inputs
+        
+        x = x.unsqueeze(-1)
+        y = torch.matmul(h, x)
+        y = y.squeeze(-1)
+
+        if self._add_awgn:
+            y = self._add_awgn((y,no))
+        
+        return y
+        
+
+class FlatFadingChannel(nn.Module):
+    def __init__(self,
+                 num_tx_ant,
+                 num_rx_ant,
+                 spatial_corr=None,
+                 add_awgn=True,
+                 return_channel=False,
+                 dtype=torch.complex64,
+                 **kwargs):
+        super().__init__(require_grad=False, dtype= dtype, **kwargs)
+        self._num_tx_ant = num_tx_ant
+        self._num_rx_ant = num_rx_ant
+        self._add_awgn = add_awgn
+        self._return_channel = return_channel
+        self._gen_chn = GenerateFlatFadingChannel(self._num_tx_ant,
+                                                  self._num_rx_ant,
+                                                  spatial_corr,
+                                                  dtype=dtype)
+        self._app_chn = ApplyFlatFadingChannel(add_awgn=add_awgn, dtype=dtype)
+
+    @property
+    def spatial_corr(self):
+        """The :class:`~sionna.channel.SpatialCorrelation` to be used."""
+        return self._gen_chn.spatial_corr
+
+    @spatial_corr.setter
+    def spatial_corr(self, value):
+        self._gen_chn.spatial_corr = value
+
+    @property
+    def generate(self):
+        """Calls the internal :class:`GenerateFlatFadingChannel`."""
+        return self._gen_chn
+
+    @property
+    def apply(self):
+        """Calls the internal :class:`ApplyFlatFadingChannel`."""
+        return self._app_chn
+
+    def call(self, inputs):
+        if self._add_awgn:
+            x, no =inputs
+        else:
+            x = inputs
+        
+        # Generate a batch of channel realizations
+        batch_size = x.shape[0]
+        h = self._gen_chn(batch_size)
+
+        # Apply the channel to the input
+        if self._add_awgn:
+            y = self._app_chn([x, h, no])
+        else:
+            y = self._app_chn([x, h])
+
+        if self._return_channel:
+            return y, h
+        else:
+            return y
+
+
+
+
      
