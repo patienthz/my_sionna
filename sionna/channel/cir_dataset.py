@@ -10,6 +10,8 @@ import tensorflow as tf
 
 from . import ChannelModel
 
+from sionna.constants import GLOBAL_SEED_NUMBER
+
 class CIRDataset(ChannelModel):
     # pylint: disable=line-too-long
     r"""CIRDataset(cir_generator, batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps, dtype=tf.complex64)

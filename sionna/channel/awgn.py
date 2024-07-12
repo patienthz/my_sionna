@@ -8,6 +8,8 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from sionna.utils import expand_to_rank, complex_normal
 
+from sionna.constants import GLOBAL_SEED_NUMBER
+
 class AWGN(Layer):
     r"""AWGN(dtype=tf.complex64, **kwargs)
 
@@ -87,3 +89,5 @@ class AWGN(Layer):
         y = x + noise
 
         return y
+    
+    

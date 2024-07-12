@@ -6,6 +6,8 @@
 
 from abc import ABC, abstractmethod
 
+from sionna.constants import GLOBAL_SEED_NUMBER
+
 class ChannelModel(ABC):
     # pylint: disable=line-too-long
     r"""ChannelModel()

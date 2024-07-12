@@ -11,6 +11,7 @@ import tensorflow as tf
 
 from sionna.utils import expand_to_rank
 from .awgn import AWGN
+from sionna.constants import GLOBAL_SEED_NUMBER
 
 class ApplyOFDMChannel(tf.keras.layers.Layer):
     # pylint: disable=line-too-long

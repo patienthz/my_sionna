@@ -3,7 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Function
 from my_code.mysionna.channel.torch_version.utils import expand_to_rank
+import numpy as np
 
+import tensorflow as tf
+
+
+from sionna.constants import GLOBAL_SEED_NUMBER 
 
 class CustomOperations:
     
@@ -40,8 +45,18 @@ class CustomOperations:
             self._temperature = temperature
 
         def forward(self, pb, shape):
-            u1 = torch.rand(shape, dtype=torch.float32)
-            u2 = torch.rand(shape, dtype=torch.float32)
+#            torch.manual_seed(2023)
+#            torch.cuda.manual_seed(2023)
+#            u1 = torch.rand(shape, dtype=torch.float32)
+#            u2 = torch.rand(shape, dtype=torch.float32)
+            tf.random.set_seed(GLOBAL_SEED_NUMBER)
+            u1_tf=tf.random.uniform(shape, minval=0, maxval=1, dtype=tf.float32)
+            u2_tf=tf.random.uniform(shape, minval=0, maxval=1, dtype=tf.float32)
+            u1_np=u1_tf.numpy()
+            u2_np=u2_tf.numpy()
+            u1=torch.from_numpy(u1_np)
+            u2=torch.from_numpy(u2_np)
+
             u = torch.stack((u1, u2), dim=-1)
 
             # 采样Gumbel分布
@@ -60,32 +75,32 @@ class BinaryMemorylessChannel(nn.Module):
         super(BinaryMemorylessChannel,self).__init__(**kwargs)
 
         assert isinstance(return_llrs, bool), "return_llrs must be bool."
-        self.return_llrs = return_llrs
+        self._return_llrs = return_llrs
 
         assert isinstance(bipolar_input, bool), "bipolar_input must be bool."
-        self.bipolar_input = bipolar_input
+        self._bipolar_input = bipolar_input
 
         assert llr_max >= 0., "llr_max must be a positive scalar value."
         self.llr_max = llr_max
         self.dtype = dtype
 
-        if self.return_llrs:
+        if self._return_llrs:
             assert dtype in (torch.float16, torch.float32, torch.float64), \
                 "LLR outputs require non-integer dtypes."
         else:
-            if self.bipolar_input:
+            if self._bipolar_input:
                 assert dtype in (torch.float16, torch.float32, torch.float64,
                                  torch.int8, torch.int16, torch.int32, torch.int64), \
                     "Only signed dtypes are supported for bipolar inputs."
             else:
                 assert dtype in (torch.float16, torch.float32, torch.float64,
-                                 torch.uint8, torch.uint16, torch.uint32, torch.uint64,
+                                 torch.uint8, torch.int16, torch.int32, torch.int64,
                                  torch.int8, torch.int16, torch.int32, torch.int64), \
                     "Only real-valued dtypes are supported."
 
         self.check_input = True  # check input for consistency (i.e., binary)
 
-        self.eps = 1e-9  # small additional term for numerical stability
+        self._eps = 1e-9  # small additional term for numerical stability
         self.temperature = torch.tensor(0.1, dtype=torch.float32)  # for Gumble-softmax
 
     @property
@@ -118,7 +133,7 @@ class BinaryMemorylessChannel(nn.Module):
         that all values are binary of bipolar values."""
         x = x.float()
         if self.check_input:
-            if self.bipolar_input:
+            if self._bipolar_input:
                 assert torch.all(torch.logical_or(x == -1, x == 1)), "Input must be bipolar {-1, 1}."
             else:
                 assert torch.all(torch.logical_or(x == 0, x == 1)), "Input must be binary {0, 1}."
@@ -131,7 +146,7 @@ class BinaryMemorylessChannel(nn.Module):
         return CustomOperations.CustomXOR.apply(a, b)       
 
     @staticmethod
-    def ste_binarizer(self, x):
+    def _ste_binarizer(x):
         """Straight through binarizer to quantize bits to int values."""
         return CustomOperations.STEBinarizer.apply(x)
 
@@ -139,16 +154,26 @@ class BinaryMemorylessChannel(nn.Module):
         """Samples binary error vector with given error probability e.
         This function is based on the Gumble-softmax "trick" to keep the
         sampling differentiable."""
+#        torch.manual_seed(2023)
+#        torch.cuda.manual_seed(2023)
+#        u1 = torch.rand(shape)
+#        u2 = torch.rand(shape)
+        
+        tf.random.set_seed(GLOBAL_SEED_NUMBER)
+        u1_tf=tf.random.uniform(shape, minval=0, maxval=1, dtype=tf.float32)
+        u2_tf=tf.random.uniform(shape, minval=0, maxval=1, dtype=tf.float32)
+        u1_np=u1_tf.numpy()
+        u2_np=u2_tf.numpy()
+        u1=torch.from_numpy(u1_np)
+        u2=torch.from_numpy(u2_np)
 
-        u1 = torch.rand(shape)
-        u2 = torch.rand(shape)
         u = torch.stack((u1, u2), dim=-1)
 
         # sample Gumble distribution
-        q = -torch.log(-torch.log(u + self.eps) + self.eps)
+        q = -torch.log(-torch.log(u + self._eps) + self._eps)
         p = torch.stack((pb, 1 - pb), dim=-1)
         p = p.unsqueeze(0).expand(q.shape)
-        a = (torch.log(p + self.eps) + q) / self.temperature
+        a = (torch.log(p + self._eps) + q) / self.temperature
 
         # apply softmax
         e_cat = F.softmax(a, dim=-1)
@@ -241,7 +266,7 @@ class BinaryMemorylessChannel(nn.Module):
 class BinarySymmetricChannel(BinaryMemorylessChannel):
     def __init__(self,return_llrs=False,bipolar_input=False,llr_max=100.,dtype=torch.float32,**kwargs):
         #继承父类的__init__()
-        super(BinarySymmetricChannel,self).__init__(return_llrs=return_llrs,
+        super().__init__(return_llrs=return_llrs,
                          bipolar_input=bipolar_input,
                          llr_max=llr_max,
                          dtype=dtype,
@@ -273,14 +298,14 @@ class BinarySymmetricChannel(BinaryMemorylessChannel):
         从状态0(输入0)翻转到状态1的概率是p   从状态1(输入1)翻转到状态0的概率也是p  保持原始状态的概率是1-p"""
         pb = pb.to(x.dtype)
         pb = torch.stack((pb,pb), dim=-1)
-        y = super(BinarySymmetricChannel,self).forward((x,pb))
+        y = super().forward((x,pb))
 
         return y
 
-class BinaryZChannel(nn.Module):
+class BinaryZChannel(BinaryMemorylessChannel):
     def __init__(self, return_llrs=False, bipolar_input=False,llr_max=100.,dtype=torch.float32, **kwargs):
 
-        super(BinaryZChannel,self).__init__(return_llrs=return_llrs,
+        super().__init__(return_llrs=return_llrs,
                          bipolar_input=bipolar_input,
                          llr_max=llr_max,
                          dtype=dtype,
@@ -299,9 +324,9 @@ class BinaryZChannel(nn.Module):
         x, pb = inputs
 
         # the Z is implemented by calling the DMC with p(1|0)=0
-        pb = pb.to(x.type)
+        pb = pb.to(x.dtype)
         pb = torch.stack((torch.zeros_like(pb), pb), dim=-1)
-        y = super(BinaryZChannel, self).forward((x, pb))
+        y = super().forward((x, pb))
 
         return y        
   
@@ -349,14 +374,12 @@ class BinaryErasureChannel(BinaryMemorylessChannel):
             # erase positions by setting llrs to 0
             y = torch.where(e == 1, torch.tensor(0, dtype=torch.float32), x)
         else:
-            erased_element = torch.tensor(0, dtype=x.dtype) if self.bipolar_input else torch.tensor(-1, dtype=x.dtype)
+            if self.bipolar_input:
+                erased_element = torch.tensor(0, dtype=x.dtype) 
+            else:
+                erased_element=torch.tensor(-1, dtype=x.dtype)
             y = torch.where(e == 0, x, erased_element)
 
         return y
-
-    def _sample_errors(self, pb, shape):
-        u = torch.rand(shape)
-        e = (u < pb).float()
-        return e
 
 

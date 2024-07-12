@@ -8,6 +8,12 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from sionna.utils import expand_to_rank
 
+from sionna.rand import set_random_numbers
+from sionna.constants import GLOBAL_SEED_NUMBER
+import numpy as np
+
+
+
 class BinaryMemorylessChannel(Layer):
     # pylint: disable=line-too-long
     r"""BinaryMemorylessChannel(return_llrs=False, bipolar_input=False, llr_max=100., dtype=tf.float32, **kwargs)
@@ -111,7 +117,7 @@ class BinaryMemorylessChannel(Layer):
                     tf.uint8, tf.uint16, tf.uint32, tf.uint64,
                     tf.int8, tf.int16, tf.int32, tf.int64),\
                     "Only, real-valued dtypes are supported."
-
+                
         self._check_input = True # check input for consistency (i.e., binary)
 
         self._eps = 1e-9 # small additional term for numerical stability
@@ -196,7 +202,7 @@ class BinaryMemorylessChannel(Layer):
 
         # this implementation follows https://arxiv.org/pdf/1611.01144v5.pdf
         # and https://arxiv.org/pdf/1906.07748.pdf
-
+        tf.random.set_seed(GLOBAL_SEED_NUMBER)        
         u1 = tf.random.uniform(shape=shape,
                                minval=0.,
                                maxval=1.,
@@ -205,6 +211,17 @@ class BinaryMemorylessChannel(Layer):
                                minval=0.,
                                maxval=1.,
                                dtype=tf.float32)
+
+
+        # u4 = tf.convert_to_tensor(np.random.rand(shape[0]).astype(np.float32), dtype=tf.float32)
+
+        # print(u3.device)
+        # print(u4.device)
+        # print(u3.dtype)
+        # print(u4.dtype)
+        #    u11=set_random_numbers(GLOBAL_SEED_NUMBER,shape[0],np.float32,0, u1.device)
+        #    u22=set_random_numbers(GLOBAL_SEED_NUMBER,shape[0],np.float32,0, u2.device)
+    
         u = tf.stack((u1, u2), axis=-1)
 
         # sample Gumble distribution

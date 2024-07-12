@@ -143,6 +143,9 @@ class ApplyFlatFadingChannel(tf.keras.layers.Layer):
 
         return y
 
+
+
+
 class FlatFadingChannel(tf.keras.layers.Layer):
     # pylint: disable=line-too-long
     r"""FlatFadingChannel(num_tx_ant, num_rx_ant, spatial_corr=None, add_awgn=True, return_channel=False, dtype=tf.complex64, **kwargs)

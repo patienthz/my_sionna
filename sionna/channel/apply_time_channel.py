@@ -13,6 +13,8 @@ import scipy
 from sionna.utils import insert_dims
 from .awgn import AWGN
 
+from sionna.constants import GLOBAL_SEED_NUMBER
+
 class ApplyTimeChannel(tf.keras.layers.Layer):
     # pylint: disable=line-too-long
     r"""ApplyTimeChannel(num_time_samples, l_tot, add_awgn=True, dtype=tf.complex64, **kwargs)
@@ -149,8 +151,8 @@ class ApplyTimeChannel(tf.keras.layers.Layer):
             x, h_time = inputs
 
         # Preparing the channel input for broadcasting and matrix multiplication
-        x = tf.pad(x, [[0,0], [0,0], [0,0], [0,1]])
-        x = insert_dims(x, 2, axis=1)
+        x = tf.pad(x, [[0,0], [0,0], [0,0], [0,1]])         #x.shape=(2,3,2,10)-->(2,3,2,11)
+        x = insert_dims(x, 2, axis=1)                       # x.shape-->(2,1,1,3,2,11)
 
         x = tf.gather(x, self._g, axis=-1)
 
