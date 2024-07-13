@@ -78,10 +78,11 @@ class ApplyFlatFadingChannel(nn.Module):
         Channel output.
         """
     def __init__(self, add_awgn=True, dtype=torch.complex64, **kwargs):
-        super().__init__(requires_grad=False, dtype=dtype, **kwargs)
+        # super().__init__(requires_grad=False, dtype=dtype, **kwargs)
+        super().__init__()
         self._add_awgn = add_awgn
         if self._add_awgn:
-            self.awgn = AWGN(dtype=dtype)
+            self._awgn = AWGN(dtype=dtype)
     
 
     def forward(self,inputs):
@@ -95,7 +96,7 @@ class ApplyFlatFadingChannel(nn.Module):
         y = y.squeeze(-1)
 
         if self._add_awgn:
-            y = self._add_awgn((y,no))
+            y = self._awgn((y,no))
         
         return y
         
@@ -109,7 +110,7 @@ class FlatFadingChannel(nn.Module):
                  return_channel=False,
                  dtype=torch.complex64,
                  **kwargs):
-        super().__init__(require_grad=False, dtype= dtype, **kwargs)
+        super().__init__()
         self._num_tx_ant = num_tx_ant
         self._num_rx_ant = num_rx_ant
         self._add_awgn = add_awgn
@@ -139,7 +140,7 @@ class FlatFadingChannel(nn.Module):
         """Calls the internal :class:`ApplyFlatFadingChannel`."""
         return self._app_chn
 
-    def call(self, inputs):
+    def forward(self, inputs):
         if self._add_awgn:
             x, no =inputs
         else:
