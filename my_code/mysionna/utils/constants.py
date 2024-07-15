@@ -1,0 +1,9 @@
+"""Constants that are used throughout Sionna"""
+
+PI = 3.141592653589793
+SPEED_OF_LIGHT = 299792458
+H = 6.62607015 * 10 ** (-34)
+DIELECTRIC_PERMITTIVITY_VACUUM = 8.8541878128e-12 # F/m
+ALPHA_MAX = 32 # Maximum value
+
+GLOBAL_SEED_NUMBER = 100 # 随机数种子，可修改

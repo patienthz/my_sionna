@@ -199,7 +199,6 @@ def cir_to_ofdm_channel(frequencies, a, tau, normalize=False):
         to ensure unit average energy per resource element. Defaults to `False`.
 
     Output
-    -------
     h_f : [batch size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, fft_size], tf.complex
         Channel frequency responses at ``frequencies``
     """
@@ -247,7 +246,7 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
     # pylint: disable=line-too-long
     r"""
     Compute the channel taps forming the discrete complex-baseband
-    representation of the channel from the channel impulse response
+    representation of the channel from the channel impulse response 
     (``a``, ``tau``).
 
     This function assumes that a sinc filter is used for pulse shaping and receive
