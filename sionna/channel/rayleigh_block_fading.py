@@ -116,3 +116,18 @@ class RayleighBlockFading(ChannelModel):
         # Tile the response over the block
         h = tf.tile(h, [1, 1, 1, 1, 1, 1, num_time_steps])
         return h, delays
+    
+# Example usage
+num_rx = 2
+num_rx_ant = 2
+num_tx = 2
+num_tx_ant = 2
+dtype = tf.complex64
+
+rayleigh_block_fading = RayleighBlockFading(num_rx, num_rx_ant, num_tx, num_tx_ant, dtype)
+batch_size = 4
+num_time_steps = 10
+h, delays = rayleigh_block_fading(batch_size, num_time_steps)
+
+print(h.shape)  # Expected shape: [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, 1, num_time_steps]
+print(delays.shape)  # Expected shape: [batch_size, num_rx, num_tx, 1]

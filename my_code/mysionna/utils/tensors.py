@@ -1,4 +1,5 @@
 import torch
+import my_code.mysionna as sn
 
 def expand_to_rank(tensor, target_rank, axis=-1):
     """
@@ -58,3 +59,44 @@ def insert_dims(tensor, num_dims, axis=-1):
     output = tensor.view(new_shape)
 
     return output
+
+def matrix_sqrt(tensor):
+    r""" Computes the square root of a matrix.
+
+    Given a batch of Hermitian positive semi-definite matrices
+    :math:`\mathbf{A}`, returns matrices :math:`\mathbf{B}`,
+    such that :math:`\mathbf{B}\mathbf{B}^H = \mathbf{A}`.
+
+    The two inner dimensions are assumed to correspond to the matrix rows
+    and columns, respectively.
+
+    Args:
+        tensor ([..., M, M]) : A tensor of rank greater than or equal
+            to two.
+
+    Returns:
+        A tensor of the same shape and type as ``tensor`` containing
+        the matrix square root of its last two dimensions.
+    """
+    if sn.config.xla_compat and not tensor.is_grad_enabled():
+        s, u = torch.linalg.eigh(tensor)
+
+        # Compute sqrt of eigenvalues
+        s = torch.abs(s)
+        s = torch.sqrt(s)
+        s = s.type(dtype=u.dtype)
+
+        # Matrix multiplication
+        s = s.unsqueeze(-2)
+        return torch.matmul(u * s, torch.conj(torch.transpose(u, -2, -1)))
+    else:
+        s, u = torch.linalg.eigh(tensor)
+
+        # Compute sqrt of eigenvalues
+        s = torch.abs(s)
+        s = torch.sqrt(s)
+        s = s.type(dtype=u.dtype)
+
+        # Matrix multiplication
+        s = s.unsqueeze(-2)
+        return torch.matmul(u * s, torch.conj(torch.transpose(u, -2, -1)))

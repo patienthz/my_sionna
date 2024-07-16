@@ -53,17 +53,13 @@ def subcarrier_frequencies(num_subcarriers, subcarrier_spacing, dtype=torch.comp
                                 dtype=real_dtype)
     frequencies = frequencies*subcarrier_spacing
     return frequencies
-
-
-# 测试函数
-""" num_subcarriers = 5
-subcarrier_spacing = 15e3  # 15 kHz
-frequencies = subcarrier_frequencies(num_subcarriers, subcarrier_spacing, dtype=torch.float32)
-print("Generated subcarrier frequencies:")
-print(frequencies)
- """
-
-
+    # 测试函数
+    """ num_subcarriers = 5
+    subcarrier_spacing = 15e3  # 15 kHz
+    frequencies = subcarrier_frequencies(num_subcarriers, subcarrier_spacing, dtype=torch.float32)
+    print("Generated subcarrier frequencies:")
+    print(frequencies)
+    """
 
 def cir_to_ofdm_channel(frequencies, a, tau, normalize=False):
     """
@@ -126,49 +122,48 @@ def cir_to_ofdm_channel(frequencies, a, tau, normalize=False):
         h_f = torch.divide(h_f, c+ 1e-10)
 
     return h_f
+    # 测试函数
+    """ from my_code.mysionna.utils import GLOBAL_SEED_NUMBER
+    import tensorflow as tf
 
-# 测试函数
-""" from my_code.mysionna.utils import GLOBAL_SEED_NUMBER
-import tensorflow as tf
+    fft_size = 64
+    batch_size = 2
+    num_rx = 2
+    num_rx_ant = 4
+    num_tx = 2
+    num_tx_ant = 4
+    num_paths = 3
+    num_time_steps = 1
 
-fft_size = 64
-batch_size = 2
-num_rx = 2
-num_rx_ant = 4
-num_tx = 2
-num_tx_ant = 4
-num_paths = 3
-num_time_steps = 1
+    tf.random.set_seed(GLOBAL_SEED_NUMBER)
 
-tf.random.set_seed(GLOBAL_SEED_NUMBER)
+    # 生成 TensorFlow 数据
+    frequencies_tf = tf.linspace(-fft_size // 2, fft_size // 2 - 1, fft_size)
+    frequencies_tf = tf.cast(frequencies_tf, tf.float64)
+    a_real_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
+    a_imag_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
+    a_tf = tf.complex(a_real_tf, a_imag_tf)
+    tau_tf = tf.random.uniform((batch_size, num_rx, num_tx, num_paths), dtype=tf.float64)
 
-# 生成 TensorFlow 数据
-frequencies_tf = tf.linspace(-fft_size // 2, fft_size // 2 - 1, fft_size)
-frequencies_tf = tf.cast(frequencies_tf, tf.float64)
-a_real_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
-a_imag_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
-a_tf = tf.complex(a_real_tf, a_imag_tf)
-tau_tf = tf.random.uniform((batch_size, num_rx, num_tx, num_paths), dtype=tf.float64)
-
-# 将 TensorFlow 数据转换为 NumPy 数组
-frequencies_np = frequencies_tf.numpy()
-a_np = a_tf.numpy()
-tau_np = tau_tf.numpy()
+    # 将 TensorFlow 数据转换为 NumPy 数组
+    frequencies_np = frequencies_tf.numpy()
+    a_np = a_tf.numpy()
+    tau_np = tau_tf.numpy()
 
 
-# 将 NumPy 数组转换为 PyTorch 张量
-frequencies = torch.from_numpy(frequencies_np)
-a = torch.from_numpy(a_np)
-tau = torch.from_numpy(tau_np)
+    # 将 NumPy 数组转换为 PyTorch 张量
+    frequencies = torch.from_numpy(frequencies_np)
+    a = torch.from_numpy(a_np)
+    tau = torch.from_numpy(tau_np)
 
-h_f = cir_to_ofdm_channel(frequencies, a, tau, normalize=True)
-print("Generated OFDM channel frequency responses:")
-print(h_f)
- """
+    h_f = cir_to_ofdm_channel(frequencies, a, tau, normalize=True)
+    print("Generated OFDM channel frequency responses:")
+    print(h_f)
+    """
 
 def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
 
-    tau = torch.tensor(tau)
+    # tau = torch.tensor(tau)
     real_dtype = tau.dtype
 
     if len(tau.shape) == 4:
@@ -183,7 +178,7 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
     tau = torch.unsqueeze(tau, dim=6)
 
     # Time lags for which to compute the channel taps
-    l = torch.arange(l_min, l_max, dtype=real_dtype)
+    l = torch.arange(l_min, l_max+1, dtype=real_dtype)
 
     # Bring tau and l to broadcastable shapes
     tau = torch.unsqueeze(tau, dim=-1)
@@ -191,7 +186,7 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
 
     # sinc pulse shaping
     g = torch.sinc(l-tau*bandwidth)
-    g = torch.complex(g, torch.tensor(0.,dtype=real_dtype),real_dtype)
+    g = torch.complex(g, torch.tensor(0.,dtype=real_dtype))
     a = torch.unsqueeze(a, dim=-1)
 
     # For every tap, sum the sinc-weighted coefficients
@@ -213,8 +208,49 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
         hm = torch.divide(hm, c+1e-10)
     
     return hm
+    #测试函数
+    """ import numpy as np
+    def test_cir_to_time_channel():
+        #设置种子
+        tf.random.set_seed(GLOBAL_SEED_NUMBER)
 
+        # 示例参数
+        bandwidth = 20e6  # 20 MHz
 
+        # 生成模拟数据
+        batch_size = 1
+        num_rx = 1
+        num_rx_ant = 1
+        num_tx = 1
+        num_tx_ant = 1
+        num_paths = 5
+        num_time_steps = 10
+
+        # 随机生成路径系数（复数）
+        a_tf = tf.complex(tf.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]),
+                    tf.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]))
+
+        # 随机生成路径延迟（实数）
+        tau_tf = tf.random.uniform([batch_size, num_rx, num_tx, num_paths])
+
+        #将 TensorFlow 数据转换为 NumPy 数组
+        a_np = a_tf.numpy()
+        tau_np = tau_tf.numpy()
+        # 将 NumPy 数组转换为 PyTorch 张量
+        a = torch.from_numpy(a_np)
+        tau = torch.from_numpy(tau_np)
+        # 时间抽头范围
+        l_min = -5
+        l_max = 5
+
+        # 调用函数
+        hm = cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=True)
+
+        print(hm)
+        print(hm.shape)
+        print(hm.dtype)
+    test_cir_to_time_channel()
+    """
 
 
 
