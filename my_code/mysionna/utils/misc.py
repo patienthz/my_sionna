@@ -19,3 +19,5 @@ def complex_normal(shape, var=1.0, dtype=torch.complex64):
     x = torch.view_as_complex(torch.stack((xr, xi), axis=-1))
 
     return x
+
+

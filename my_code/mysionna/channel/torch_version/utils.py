@@ -252,6 +252,51 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
     test_cir_to_time_channel()
     """
 
+def time_lag_discrete_time_channel(bandwidth, maximum_delay_spread=3e-6):
+    """
+    Compute the smallest and largest time-lag for the discrete complex baseband channel,
+    i.e., L_min and L_max.
+
+    The smallest time-lag (L_min) returned is always -6, as this value
+    was found small enough for all models included in Sionna.
+
+    The largest time-lag (L_max) is computed from the `bandwidth`
+    and `maximum_delay_spread` as follows:
+
+    L_max = ceil(W * tau_max) + 6
+
+    where L_max is the largest time-lag, W the `bandwidth`,
+    and tau_max the `maximum_delay_spread`.
+
+    The default value for the `maximum_delay_spread` is 3us, which was found
+    to be large enough to include most significant paths with all channel models
+    included in Sionna assuming a nominal delay spread of 100ns.
+
+    Note:
+    The values of L_min and L_max computed by this function are only recommended values.
+    L_min and L_max should be set according to the considered channel model. For OFDM systems,
+    one also needs to be careful that the effective length of the complex baseband channel
+    is not larger than the cyclic prefix length.
+
+    Args:
+        bandwidth (float): Bandwidth (W) [Hz]
+        maximum_delay_spread (float): Maximum delay spread [s]. Defaults to 3us.
+
+    Returns:
+        tuple: (l_min, l_max)
+            l_min (int): Smallest time-lag (L_min) for the discrete complex baseband channel. Set to -6.
+            l_max (int): Largest time-lag (L_max) for the discrete complex baseband channel.
+    """
+    l_min = torch.tensor(-6, dtype=torch.int32)
+    l_max = torch.ceil(torch.tensor(maximum_delay_spread * bandwidth, dtype=torch.float32)) + 6
+    l_max = torch.tensor(l_max, dtype=torch.int32)
+    return l_min, l_max
+
+""" # 测试函数
+bandwidth = 1e6  # 1 MHz
+max_delay_spread = 3e-6  # 3 microseconds
+l_min, l_max = time_lag_discrete_time_channel(bandwidth, max_delay_spread)
+print(f"l_min: {l_min}, l_max: {l_max}") """
 
 
 

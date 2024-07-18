@@ -15,6 +15,7 @@ import time
 from sionna import signal
 
 
+
 def ebnodb2no(ebno_db, num_bits_per_symbol, coderate, resource_grid=None):
     r"""Compute the noise variance `No` for a given `Eb/No` in dB.
 

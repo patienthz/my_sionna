@@ -212,9 +212,42 @@ class PerColumnModel(nn.Module):
         if self._r_rx is not None:
             h = h.transpose(-2, -1)
             h = h.unsqueeze(-1)
-            r_rx_sqrt = self.expand_to_rank(self._r_rx_sqrt, h.dim(), 0)
+            r_rx_sqrt = expand_to_rank(self._r_rx_sqrt, h.dim(), 0)
             h = torch.matmul(r_rx_sqrt, h)
             h = h.squeeze(-1)
             h = h.transpose(-2, -1)
 
-        return h
+        return h      
+
+from abc import ABC, abstractmethod
+import torch
+import tensorflow as tf
+import numpy as np
+import torch.nn as nn
+
+""" from my_code.mysionna.utils import expand_to_rank,matrix_sqrt
+from my_code.mysionna.constants import GLOBAL_SEED_NUMBER    
+def test_PerColumnModel():
+    tf.random.set_seed(GLOBAL_SEED_NUMBER)
+    # Define input parameters
+    M, K = 4, 3  # Dimensions of the matrices
+    h_tf = tf.complex(tf.random.normal([M, K]), tf.random.normal([M, K]))  # Random complex matrix
+    r_rx_tf = tf.complex(tf.eye(M, batch_shape=[K]), tf.zeros([K, M, M]))  # Identity matrices as correlation matrices
+
+    r_rx_np = r_rx_tf.numpy()
+    r_rx = torch.from_numpy(r_rx_np)
+
+    h_np = h_tf.numpy()
+    h = torch.from_numpy(h_np)
+    # Initialize the PerColumnModel
+    model = PerColumnModel(r_rx)
+
+    # Get the correlated channel coefficients
+    h_corr = model(h)
+
+    # Print the input and output matrices
+    print("Input h:\n", h)
+    print("Output h_corr:\n", h_corr)
+
+test_PerColumnModel()
+     """
