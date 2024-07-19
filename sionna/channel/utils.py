@@ -438,7 +438,6 @@ def time_to_ofdm_channel(h_t, rg, l_min):
 
     return h_f
 
-
 def deg_2_rad(x):
     r"""
     Convert degree to radian
@@ -1388,8 +1387,6 @@ def gen_single_sector_topology_interferers( batch_size,
 
     return ut_loc, bs_loc, ut_orientations, bs_orientation, ut_velocities,\
             in_state
-
-
 
 def exp_corr_mat(a, n, dtype=tf.complex64):
     r"""Generate exponential correlation matrices.

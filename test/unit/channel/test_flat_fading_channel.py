@@ -215,3 +215,5 @@ class TestFlatFadingChannel(unittest.TestCase):
             r_rx_hat += tmp[1]/iterations/num_tx_ant
         self.assertTrue(np.allclose(r_tx, r_tx_hat, atol=1e-3))
         self.assertTrue(np.allclose(r_rx, r_rx_hat, atol=1e-3))
+if __name__ == '__main__':
+    unittest.main()

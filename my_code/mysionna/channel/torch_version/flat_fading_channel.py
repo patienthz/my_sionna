@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Function
 
-from my_code.mysionna.channel.torch_version import AWGN
+from my_code.mysionna.channel.torch_version.awgn import AWGN
 from my_code.mysionna.utils import complex_normal
 
 

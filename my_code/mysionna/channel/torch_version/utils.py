@@ -1,4 +1,5 @@
 import torch
+import warnings
 
 from my_code.mysionna.utils import expand_to_rank
 from my_code.mysionna import PI
@@ -292,12 +293,208 @@ def time_lag_discrete_time_channel(bandwidth, maximum_delay_spread=3e-6):
     l_max = torch.tensor(l_max, dtype=torch.int32)
     return l_min, l_max
 
-""" # 测试函数
-bandwidth = 1e6  # 1 MHz
-max_delay_spread = 3e-6  # 3 microseconds
-l_min, l_max = time_lag_discrete_time_channel(bandwidth, max_delay_spread)
-print(f"l_min: {l_min}, l_max: {l_max}") """
+    """ # 测试函数
+    bandwidth = 1e6  # 1 MHz
+    max_delay_spread = 3e-6  # 3 microseconds
+    l_min, l_max = time_lag_discrete_time_channel(bandwidth, max_delay_spread)
+    print(f"l_min: {l_min}, l_max: {l_max}") """
 
+def exp_corr_mat(a, n, dtype=torch.complex64):
+    r"""Generate exponential correlation matrices.
 
+    This function computes for every element :math:`a` of a complex-valued
+    tensor :math:`\mathbf{a}` the corresponding :math:`n\times n` exponential
+    correlation matrix :math:`\mathbf{R}(a,n)`, defined as (Eq. 1, [MAL2018]_):
 
+    .. math::
+        \mathbf{R}(a,n)_{i,j} = \begin{cases}
+                    1 & \text{if } i=j\\
+                    a^{i-j}  & \text{if } i>j\\
+                    (a^\star)^{j-i}  & \text{if } j<i, j=1,\dots,n\\
+                  \end{cases}
 
+    where :math:`|a|<1` and :math:`\mathbf{R}\in\mathbb{C}^{n\times n}`.
+
+    Input
+    -----
+    a : [n_0, ..., n_k], torch.complex
+        A tensor of arbitrary rank whose elements
+        have an absolute value smaller than one.
+
+    n : int
+        Number of dimensions of the output correlation matrices.
+
+    dtype : torch.complex64, torch.complex128
+        The dtype of the output.
+
+    Output
+    ------
+    R : [n_0, ..., n_k, n, n], torch.complex
+        A tensor of the same dtype as the input tensor :math:`\mathbf{a}`.
+    """
+    if dtype == torch.complex32:
+        real_dtype = torch.float16
+    elif dtype == torch.complex64:
+        real_dtype = torch.float32
+    elif dtype == torch.complex128:
+        real_dtype = torch.float64
+    else:
+        raise TypeError("Not found comfortable type")
+
+    # Cast to desired output dtype and expand last dimension for broadcasting
+    if not torch.is_tensor(a):
+        a = torch.tensor(a)
+    a = a.to(dtype=dtype)
+    a = a.unsqueeze(-1)
+
+    # Check that a is valid
+    if not torch.all(torch.abs(a) < 1):
+        raise ValueError("The absolute value of the elements of `a` must be smaller than one")
+
+    # Vector of exponents, adapt dtype and dimensions for broadcasting
+    exp = torch.arange(0, n, dtype=real_dtype)
+    exp = exp.to(dtype=dtype) 
+    exp = expand_to_rank(exp, a.dim(),0)
+
+    # First column of R
+    col = torch.pow(a, exp)
+
+    # For a=0, one needs to remove the resulting nans due to 0**0=nan
+    col = torch.where(torch.isnan(col.real), torch.ones_like(col), col)
+
+    # First row of R (equal to complex-conjugate of the first column)
+    row = torch.conj(col)
+
+    # Create Toeplitz matrix manually
+    R = torch.zeros(*a.shape[:-1], n, n,dtype=dtype)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                R[..., i, j] = 1
+            elif i > j:
+                R[..., i, j] = col[..., i-j]
+            else:
+                R[..., i, j] = row[..., j-i]
+
+    return R
+    """     # 测试例子
+    a = torch.tensor([0.5 + 0.5j,0.1+0.6j], dtype=torch.complex128)
+    n = 4
+    result = exp_corr_mat(a, n)
+
+    print("Result:")
+    print(result)
+    print(result.shape) """
+
+def deg_2_rad(x):
+    r"""
+    Convert degree to radian
+
+    Input
+    ------
+        x : Tensor
+            Angles in degree
+
+    Output
+    -------
+        y : Tensor
+            Angles ``x`` converted to radian
+    """
+    if not torch.is_tensor(x):
+        x = torch.tensor(x)
+    y=x*torch.tensor(PI/180.0)
+    return y.to(dtype= x.dtype)
+
+def one_ring_corr_mat(phi_deg, num_ant, d_h=0.5, sigma_phi_deg=15, dtype=torch.complex64):
+    r"""Generate covariance matrices from the one-ring model.
+
+    This function generates approximate covariance matrices for the
+    so-called `one-ring` model (Eq. 2.24) [BHS2017]_. A uniform
+    linear array (ULA) with uniform antenna spacing is assumed. The elements
+    of the covariance matrices are computed as:
+
+    .. math::
+        \mathbf{R}_{\ell,m} =
+              \exp\left( j2\pi d_\text{H} (\ell -m)\sin(\varphi) \right)
+              \exp\left( -\frac{\sigma_\varphi^2}{2}
+              \left( 2\pi d_\text{H}(\ell -m)\cos(\varphi) \right)^2 \right)
+
+    for :math:`\ell,m = 1,\dots, M`, where :math:`M` is the number of antennas,
+    :math:`\varphi` is the angle of arrival, :math:`d_\text{H}` is the antenna
+    spacing in multiples of the wavelength,
+    and :math:`\sigma^2_\varphi` is the angular standard deviation.
+
+    Input
+    -----
+    phi_deg : [n_0, ..., n_k], tf.float
+        A tensor of arbitrary rank containing azimuth angles (deg) of arrival.
+
+    num_ant : int
+        Number of antennas
+
+    d_h : float
+        Antenna spacing in multiples of the wavelength. Defaults to 0.5.
+
+    sigma_phi_deg : float
+        Angular standard deviation (deg). Defaults to 15 (deg). Values greater
+        than 15 should not be used as the approximation becomes invalid.
+
+    dtype : tf.complex64, tf.complex128
+        The dtype of the output.
+
+    Output
+    ------
+    R : [n_0, ..., n_k, num_ant, num_ant], `dtype`
+        Tensor containing the covariance matrices of the desired dtype.
+    """
+
+    if sigma_phi_deg > 15:
+        warnings.warn("sigma_phi_deg should be smaller than 15.")
+    # get real_dtype    
+    if dtype == torch.complex32:
+        real_dtype = torch.float16
+    elif dtype == torch.complex64:
+        real_dtype = torch.float32
+    elif dtype == torch.complex128:
+        real_dtype = torch.float64
+    else:
+        raise TypeError("Not found comfortable type")
+    
+    if not torch.is_tensor(phi_deg):
+        phi_deg = torch.tensor(phi_deg)
+    # Convert all inputs to radians
+    phi_deg = phi_deg.to(dtype=real_dtype)
+    sigma_phi_deg = torch.tensor(sigma_phi_deg, dtype=real_dtype)
+    phi = deg_2_rad(phi_deg)
+    sigma_phi = deg_2_rad(sigma_phi_deg)
+
+    # Add dimensions for broadcasting
+    phi = phi.unsqueeze(-1)
+    sigma_phi = sigma_phi.unsqueeze(-1)
+
+    # Compute first column
+    c = torch.tensor(2 * PI * d_h, dtype=real_dtype)
+    d = c * torch.arange(0, num_ant, dtype=real_dtype)
+    d = expand_to_rank(d, phi.dim(), 0)
+
+    a = torch.complex(torch.zeros_like(d,dtype=real_dtype), d * torch.sin(phi))
+    exp_a = torch.exp(a)  # First exponential term
+
+    b = -0.5 * (sigma_phi * d * torch.cos(phi)) ** 2
+    exp_b = torch.exp(b).to(dtype)  # Second exponential term
+
+    col = exp_a * exp_b  # First column
+
+    # First row is just the complex conjugate of first column
+    row = torch.conj(col)
+
+    # Create Toeplitz matrix using first column and first row
+    toeplitz_matrix = torch.zeros((*col.shape[:-1], num_ant, num_ant), dtype=dtype)
+    for i in range(num_ant):
+        for j in range(num_ant):
+            if i >= j:
+                toeplitz_matrix[..., i, j] = col[..., i - j]
+            else:
+                toeplitz_matrix[..., i, j] = row[..., j - i]
+
+    return toeplitz_matrix
