@@ -9,7 +9,7 @@ from my_code.mysionna.utils import complex_normal
 
 
 
-class GenerateFlatFadingChannel():
+class GenerateFlatFadingChannel(nn.Module):
 
     def __init__(self, num_tx_ant, num_rx_ant, spatial_corr=None, dtype=torch.complex64, **kwargs):
         super().__init__(**kwargs)
@@ -90,12 +90,14 @@ class ApplyFlatFadingChannel(nn.Module):
             x, h, no = inputs
         else:
             x, h = inputs
-        
+
+        x = x.to(h.device)  # 确保x在同一个设备上
         x = x.unsqueeze(-1)
         y = torch.matmul(h, x)
         y = y.squeeze(-1)
 
         if self._add_awgn:
+            no = no.to(y.device)  # 确保no在同一个设备上
             y = self._awgn((y,no))
         
         return y

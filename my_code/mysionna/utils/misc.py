@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import numpy as np
+from my_code.mysionna.mapping import  Mapper, Constellation
 
 def complex_normal(shape, var=1.0, dtype=torch.complex64):
     # Half the variance for each dimension
@@ -61,10 +63,9 @@ class BinarySource(nn.Module):
 
     def forward(self, inputs):
         if self._seed is not None:
-            return torch.randint(0, 2, inputs, generator=self._rng, dtype=torch.int32, device=self.device).to(self.dtype)
+            return torch.randint(0, 2, tuple(inputs.tolist()), generator=self._rng, dtype=torch.int32, device=self.device).to(self.dtype)
         else:
-            return torch.randint(0, 2, inputs, dtype=torch.int32, device=self.device).to(self.dtype)
-
+            return torch.randint(0, 2, tuple(inputs.tolist()), dtype=torch.int32, device=self.device).to(self.dtype)
 
 class SymbolSource(nn.Module):
     """
@@ -130,24 +131,37 @@ class SymbolSource(nn.Module):
                  return_bits=False,
                  seed=None,
                  dtype=torch.complex64,
+                 device= "cuda",
                  **kwargs):
         super().__init__(**kwargs)
         constellation = Constellation.create_or_check_constellation(
             constellation_type,
             num_bits_per_symbol,
             constellation,
-            dtype)
+            dtype=dtype)
+        
+        if dtype ==torch.complex32:
+            real_dtype = torch.float16
+        elif dtype == torch.complex64:
+            real_dtype = torch.float32
+        elif dtype == torch.complex128:
+            real_dtype = torch.float64
+        else:
+            raise TypeError("real_dtype must be in [torch.float16,torch.float32,torch.float64]")
         self._num_bits_per_symbol = constellation.num_bits_per_symbol
         self._return_indices = return_indices
         self._return_bits = return_bits
-        self._binary_source = BinarySource(seed=seed, dtype=dtype.real_dtype)
+        self._binary_source = BinarySource(seed=seed, dtype=real_dtype,device=device)
         self._mapper = Mapper(constellation=constellation,
                               return_indices=return_indices,
-                              dtype=dtype)
+                              dtype=dtype,
+                              device=device)
 
     def forward(self, inputs):
+        if not isinstance(inputs,torch.Tensor):
+            inputs = torch.tensor(inputs)
         shape = torch.cat([inputs, torch.tensor([self._num_bits_per_symbol])], dim=-1)
-        b = self._binary_source(shape.int())
+        b = self._binary_source(shape.to(torch.int32))
         if self._return_indices:
             x, ind = self._mapper(b)
         else:
@@ -163,5 +177,70 @@ class SymbolSource(nn.Module):
 
         return result
 
+
+class QAMSource(SymbolSource):
+    # pylint: disable=line-too-long
+    r"""QAMSource(num_bits_per_symbol=None, return_indices=False, return_bits=False, seed=None, dtype=torch.complex64, **kwargs)
+
+    Layer generating a tensor of arbitrary shape filled with random QAM symbols.
+    Optionally, the symbol indices and/or binary representations of the
+    constellation symbols can be returned.
+
+    Parameters
+    ----------
+    num_bits_per_symbol : int
+        The number of bits per constellation symbol, e.g., 4 for QAM16.
+
+    return_indices : bool
+        If enabled, the function also returns the symbol indices.
+        Defaults to `False`.
+
+    return_bits : bool
+        If enabled, the function also returns the binary symbol
+        representations (i.e., bit labels).
+        Defaults to `False`.
+
+    seed : int or None
+        The seed for the random generator.
+        `None` leads to a random initialization of the RNG.
+        Defaults to `None`.
+
+    dtype : One of [torch.complex64, torch.complex128], torch.DType
+        The output dtype. Defaults to torch.complex64.
+
+    Input
+    -----
+    shape : 1D tensor/array/list, int
+        The desired shape of the output tensor.
+
+    Output
+    ------
+    symbols : ``shape``, ``dtype``
+        Tensor filled with random QAM symbols.
+
+    symbol_indices : ``shape``, torch.int32
+        Tensor filled with the symbol indices.
+        Only returned if ``return_indices`` is `True`.
+
+    bits : [``shape``, ``num_bits_per_symbol``], torch.int32
+        Tensor filled with the binary symbol representations (i.e., bit labels).
+        Only returned if ``return_bits`` is `True`.
+    """
+    def __init__(self,
+                 num_bits_per_symbol=None,
+                 return_indices=False,
+                 return_bits=False,
+                 seed=None,
+                 dtype=torch.complex64,
+                 device=None,
+                 **kwargs):
+        super(QAMSource, self).__init__(constellation_type="qam",
+                                        num_bits_per_symbol=num_bits_per_symbol,
+                                        return_indices=return_indices,
+                                        return_bits=return_bits,
+                                        seed=seed,
+                                        dtype=dtype,
+                                        device=device,
+                                        **kwargs)
 
 

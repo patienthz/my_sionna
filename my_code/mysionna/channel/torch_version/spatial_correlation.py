@@ -101,12 +101,12 @@ class KroneckerModel(SpatialCorrelation):
     
     def __call__(self, h, *args, **kwargs):
         if self._r_tx_sqrt is not None:
-            r_tx_sqrt = expand_to_rank(self._r_tx_sqrt,h.dim(),0)
+            r_tx_sqrt = expand_to_rank(self._r_tx_sqrt.to(h.device),h.dim(),0)
             h = torch.matmul(h, r_tx_sqrt.conj().transpose(-2, -1))
 
         
         if self._r_rx_sqrt is not None:
-            r_rx_sqrt = expand_to_rank(self._r_rx_sqrt, h.dim(),0)
+            r_rx_sqrt = expand_to_rank(self._r_rx_sqrt.to(h.device), h.dim(),0)
             h = torch.matmul(r_rx_sqrt, h)
         
         return h

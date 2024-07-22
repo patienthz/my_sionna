@@ -83,6 +83,7 @@ class AWGN(nn.Module):
     def forward(self, inputs):
         x, no = inputs
 
+
         # Create tensors of real-valued Gaussian noise for each complex dim.
         noise = complex_normal(x.shape, dtype=x.dtype)
 
@@ -90,6 +91,8 @@ class AWGN(nn.Module):
         no = expand_to_rank(no, x.ndim, axis=-1)
         
         # Apply variance scaling
+        no = no.to(noise.device)
+        x = x.to(noise.device)
         no = no.to(self._real_dtype)
         noise *= torch.sqrt(no).to(noise.dtype)
 
