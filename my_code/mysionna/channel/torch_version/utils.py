@@ -498,3 +498,19 @@ def one_ring_corr_mat(phi_deg, num_ant, d_h=0.5, sigma_phi_deg=15, dtype=torch.c
                 toeplitz_matrix[..., i, j] = row[..., j - i]
 
     return toeplitz_matrix
+
+def wrap_angle_0_360(angle):
+    r"""
+    Wrap ``angle`` to (0,360)
+
+    Input
+    ------
+        angle : Tensor
+            Input to wrap
+
+    Output
+    -------
+        y : Tensor
+            ``angle`` wrapped to (0,360)
+    """
+    return torch.fmod(angle, 360.)

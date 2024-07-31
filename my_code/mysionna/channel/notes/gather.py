@@ -18,19 +18,40 @@ import numpy as np
     
     return out_data """
 
-def gather_pytorch(input_data,  axis=0, indices=None):
-    if axis < 0:
-        axis = len(input_data.shape) + axis
+# def gather_pytorch(input_data,  axis=0, indices=None):
+#     if axis < 0:
+#         axis = len(input_data.shape) + axis
         
-    data = torch.index_select(input_data, axis, indices.flatten())
+#     data = torch.index_select(input_data, axis, indices.flatten())
 
-    shape_input = list(input_data.shape)
-    # shape_ = delete(shape_input, axis)
+#     shape_input = list(input_data.shape)
+#     # shape_ = delete(shape_input, axis)
     
-    # 连接列表
-    shape_output = shape_input[:axis] + \
-        list(indices.shape) + shape_input[axis + 1:]
+#     # 连接列表
+#     shape_output = shape_input[:axis] + \
+#         list(indices.shape) + shape_input[axis + 1:]
 
-    data_output = data.reshape(shape_output)
+#     data_output = data.reshape(shape_output)
 
-    return data_output
+#     return data_output
+
+def gather_pytorch(input_data, indices=None, batch_dims=0, axis=0):
+    input_data = torch.tensor(input_data)
+    indices = torch.tensor(indices)
+    if batch_dims == 0:
+        if axis < 0:
+            axis = len(input_data.shape) + axis
+        data = torch.index_select(input_data, axis, indices.flatten())
+        shape_input = list(input_data.shape)
+        # shape_ = delete(shape_input, axis)
+        # 连接列表
+        shape_output = shape_input[:axis] + \
+            list(indices.shape) + shape_input[axis + 1:]
+        data_output = data.reshape(shape_output)
+        return data_output
+    else:
+        data_output = []
+        for data,ind in zip(input_data, indices):
+            r = gather_pytorch(data, ind, batch_dims=batch_dims-1)
+            data_output.append(r)
+        return torch.stack(data_output)
