@@ -100,3 +100,61 @@ def matrix_sqrt(tensor):
         # Matrix multiplication
         s = s.unsqueeze(-2)
         return torch.matmul(u * s, torch.conj(torch.transpose(u, -2, -1)))
+    
+def split_dim(tensor, shape, axis):
+    """Reshapes a dimension of a tensor into multiple dimensions.
+
+    This operation splits the dimension ``axis`` of a ``tensor`` into
+    multiple dimensions according to ``shape``.
+
+    Args:
+        tensor : A tensor.
+        shape (list or TensorShape): The shape to which the dimension should
+            be reshaped.
+        axis (int): The index of the axis to be reshaped.
+
+    Returns:
+        A tensor of the same type as ``tensor`` with len(``shape``)-1
+        additional dimensions, but the same number of elements.
+    """
+
+    if not isinstance(tensor,torch.Tensor):
+        tensor = torch.tensor(tensor)
+
+    assert 0 <= axis < tensor.dim()-1, "0<= `axis` <= rank(tensor)-1"
+
+    s = list(tensor.shape)
+    new_shape = s[:axis] + list(shape) + s[axis+1:]
+    output = tensor.reshape(new_shape)
+
+    return output
+
+def flatten_last_dims(tensor, num_dims=2):
+    """
+    将张量的最后 `n` 个维度展平。
+
+    这个操作将张量的最后 ``num_dims`` 个维度展平。
+    这是函数 ``flatten_dims`` 的简化版本。
+
+    参数:
+        tensor : 一个张量。
+        num_dims (int): 要组合的维度数量。必须大于或等于2，并且小于或等于张量的秩。
+
+    返回:
+        一个与 ``tensor`` 类型相同的张量，维度减少了 ``num_dims`` - 1，但元素数量保持不变。
+    """
+    if not isinstance(tensor,torch.Tensor):
+        tensor = torch.tensor(tensor)
+
+    assert num_dims >= 2, "`num_dims` 必须 >= 2"
+    assert num_dims <= tensor.dim(), "`num_dims` 必须 <= 张量的秩"
+
+    if num_dims == len(tensor.shape):
+        new_shape = [-1]
+    else:
+        shape = list(tensor.shape)
+        last_dim = torch.prod(torch.tensor(shape[-num_dims:])).item()
+        new_shape = shape[:-num_dims] + [last_dim]
+
+    return tensor.reshape(new_shape)
+
