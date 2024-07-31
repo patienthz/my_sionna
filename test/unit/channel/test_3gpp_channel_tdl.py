@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 from sionna.channel.tr38901 import TDL
 from sionna.channel import exp_corr_mat
-from channel_test_utils import *
+from test.unit.channel.channel_test_utils import *
 from scipy.stats import kstest, rayleigh, rice
 from scipy.special import jv
 
@@ -568,3 +568,5 @@ class TestTDL(unittest.TestCase):
         # Test
         max_err = np.max(np.abs(est_spatial_cov - spatial_corr_mat))
         self.assertLessEqual(max_err, TestTDL.MAX_ERR)
+if __name__ == '__main__':
+    unittest.main()
