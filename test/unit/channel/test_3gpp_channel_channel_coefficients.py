@@ -22,7 +22,7 @@ if gpus:
 import unittest
 import numpy as np
 import sionna
-from channel_test_utils import *
+from test.unit.channel.channel_test_utils import *
 
 
 class TestChannelCoefficientsGenerator(unittest.TestCase):

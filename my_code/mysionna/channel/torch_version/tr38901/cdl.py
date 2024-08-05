@@ -298,7 +298,7 @@ class CDL(ChannelModel):
         velocities = torch.stack([ v_r*cos(v_phi)*sin(v_theta),
                                 v_r*sin(v_phi)*sin(v_theta),
                                 v_r*cos(v_theta)], dim=-1)
-        los = torch.fill([batch_size, 1, 1], self._los)
+        los = torch.full((batch_size, 1, 1), self._los)
         los_aoa = torch.tile(self._los_aoa, [batch_size, 1, 1])
         los_zoa = torch.tile(self._los_zoa, [batch_size, 1, 1])
         los_aod = torch.tile(self._los_aod, [batch_size, 1, 1])
@@ -450,6 +450,8 @@ class CDL(ChannelModel):
         # LoS scenario ?
         self._los = params['los']
         param = params['los']
+        if not isinstance(param,torch.Tensor):
+            param = torch.tensor(param)
         param.to(torch.bool)
 
         # Loading cluster delays and powers
@@ -580,7 +582,7 @@ class CDL(ChannelModel):
         xpr = params['xpr']
         xpr = np.power(10.0, xpr/10.0)
         xpr = torch.tensor(xpr, dtype=self._real_dtype)
-        xpr = torch.fill([self._num_clusters, CDL.NUM_RAYS], xpr)
+        xpr = torch.full((self._num_clusters, CDL.NUM_RAYS), xpr)
         self._xpr = self._reshape_for_cir_computation(xpr)
 
 
@@ -653,7 +655,7 @@ class CDL(ChannelModel):
             tiling = torch.cat([tiling, torch.ones([array_rank],dtype=torch.int32)], dim=0)
 
         array = insert_dims(array, 3, 0)
-        array = torch.tile(array, tiling)
+        array = torch.tile(array, tuple(tiling.tolist()))
 
         return array
     

@@ -228,6 +228,8 @@ class ChannelCoefficientsGenerator:
 
         if not isinstance(rays.aoa,torch.Tensor):
             rays_aoa =torch.tensor(rays.aoa)
+        else:
+            rays_aoa = rays.aoa
         # Step 10
         phi = self._step_10(rays_aoa.shape)
 
@@ -525,7 +527,7 @@ class ChannelCoefficientsGenerator:
         """
         shape_tensor = torch.tensor(shape, dtype=torch.int64)
         phi_shape = torch.cat([shape_tensor, torch.tensor([4])], dim=0)
-        phi = (torch.rand(phi_shape, dtype=self._real_dtype) * 2 * PI) - PI
+        phi = (torch.rand(tuple(phi_shape.tolist()), dtype=self._real_dtype) * 2 * PI) - PI
 
         return phi
 

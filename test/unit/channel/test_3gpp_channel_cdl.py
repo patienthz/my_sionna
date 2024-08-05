@@ -23,7 +23,7 @@ import sionna
 import unittest
 import numpy as np
 from sionna.channel.tr38901 import CDL, PanelArray
-from channel_test_utils import *
+from test.unit.channel.channel_test_utils import *
 
 
 class TestCDL(unittest.TestCase):
