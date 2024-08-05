@@ -270,18 +270,18 @@ class TDL(ChannelModel):
 
         self._num_rx_ant = num_rx_ant
         self._num_tx_ant = num_tx_ant
-        self._carrier_frequency = torch.tensor(carrier_frequency, real_dtype)
-        self._num_sinusoids = torch.tensor(num_sinusoids, torch.int32)
+        self._carrier_frequency = torch.tensor(carrier_frequency, dtype=real_dtype)
+        self._num_sinusoids = torch.tensor(num_sinusoids, dtype=torch.int32)
         self._los_angle_of_arrival = torch.tensor(   los_angle_of_arrival,
-                                                    real_dtype)
-        self._delay_spread = torch.tensor(delay_spread, real_dtype)
-        self._min_speed = torch.tensor(min_speed, real_dtype)
+                                                    dtype=real_dtype)
+        self._delay_spread = torch.tensor(delay_spread, dtype=real_dtype)
+        self._min_speed = torch.tensor(min_speed, dtype=real_dtype)
         if max_speed is None:
             self._max_speed = self._min_speed
         else:
             assert max_speed >= min_speed, \
                 "min_speed cannot be larger than max_speed"
-            self._max_speed = torch.tensor(max_speed, real_dtype)
+            self._max_speed = torch.tensor(max_speed, dtype=real_dtype)
 
         # Pre-compute maximum and minimum Doppler shifts
         self._min_doppler = self._compute_doppler(self._min_speed)
@@ -289,7 +289,7 @@ class TDL(ChannelModel):
 
         # Precompute average angles of arrivals for each sinusoid
         alpha_const = 2. * PI / num_sinusoids * \
-            torch.aarange(1., num_sinusoids + 1, 1., dtype=real_dtype)
+            torch.arange(1., num_sinusoids + 1, 1., dtype=real_dtype)
         self._alpha_const = alpha_const.view(1, # batch size
                                              1, # num rx
                                              1, # num rx ant
@@ -301,7 +301,7 @@ class TDL(ChannelModel):
 
         # Precompute square root of spatial covariance matrices
         if spatial_corr_mat is not None:
-            spatial_corr_mat = spatial_corr_mat.to(self._dtype)
+            spatial_corr_mat = torch.tensor(spatial_corr_mat, dtype=self._dtype)
             spatial_corr_mat_sqrt = matrix_sqrt(spatial_corr_mat)
             spatial_corr_mat_sqrt = expand_to_rank(spatial_corr_mat_sqrt, 7, 0)
             self._spatial_corr_mat_sqrt = spatial_corr_mat_sqrt
@@ -426,7 +426,7 @@ class TDL(ChannelModel):
         # Eq. (6a) in the paper [SoS]
         h = torch.complex(torch.cos(argument), torch.sin(argument))
         normalization_factor = 1./torch.sqrt( self._num_sinusoids.to(self._real_dtype))
-        h = torch.complex(normalization_factor, torch.tensor(0., self._real_dtype))\
+        h = torch.complex(normalization_factor, torch.tensor(0., dtype=self._real_dtype))\
             *torch.sum(h, dim=-1)
 
         # Scaling by average power
@@ -561,12 +561,12 @@ class TDL(ChannelModel):
         self._scale_delays = bool(params['scale_delays'])
 
         # Loading cluster delays and mean powers
-        self._num_clusters = torch.tensor(params['num_clusters'], torch.int32)
+        self._num_clusters = torch.tensor(params['num_clusters'], dtype=torch.int32)
 
         # Retrieve power and delays
-        delays = torch.tensor(params['delays'], self._real_dtype)
+        delays = torch.tensor(params['delays'], dtype=self._real_dtype)
         mean_powers = np.power(10.0, np.array(params['powers'])/10.0)
-        mean_powers = torch.tensor(mean_powers, self._dtype)
+        mean_powers = torch.tensor(mean_powers, dtype=self._dtype)
 
         if self._los:
             # The power of the specular component of the first path is stored

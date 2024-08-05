@@ -121,7 +121,7 @@ def split_dim(tensor, shape, axis):
     if not isinstance(tensor,torch.Tensor):
         tensor = torch.tensor(tensor)
 
-    assert 0 <= axis < tensor.dim()-1, "0<= `axis` <= rank(tensor)-1"
+    assert 0 <= axis <= tensor.dim()-1, "0<= `axis` <= rank(tensor)-1"
 
     s = list(tensor.shape)
     new_shape = s[:axis] + list(shape) + s[axis+1:]

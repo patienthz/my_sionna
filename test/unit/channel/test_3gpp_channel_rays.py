@@ -22,7 +22,7 @@ if gpus:
 import unittest
 import numpy as np
 import sionna
-from channel_test_utils import *
+from test.unit.channel.channel_test_utils import *
 from scipy.stats import kstest
 
 
@@ -486,3 +486,7 @@ class TestRays(unittest.TestCase):
         ref_samples = ref_samples[:,:num_clusters].flatten()
         D,_ = kstest(ref_samples, samples)
         self.assertLessEqual(D, TestRays.MAX_ERR)
+
+
+if __name__ == '__main__':
+    unittest.main()

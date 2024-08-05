@@ -125,7 +125,7 @@ def cir_to_ofdm_channel(frequencies, a, tau, normalize=False):
     return h_f
     # 测试函数
     """ from my_code.mysionna.utils import GLOBAL_SEED_NUMBER
-    import tensorflow as tf
+    import tensorflow as torch
 
     fft_size = 64
     batch_size = 2
@@ -136,20 +136,20 @@ def cir_to_ofdm_channel(frequencies, a, tau, normalize=False):
     num_paths = 3
     num_time_steps = 1
 
-    tf.random.set_seed(GLOBAL_SEED_NUMBER)
+    torch.random.set_seed(GLOBAL_SEED_NUMBER)
 
     # 生成 TensorFlow 数据
-    frequencies_tf = tf.linspace(-fft_size // 2, fft_size // 2 - 1, fft_size)
-    frequencies_tf = tf.cast(frequencies_tf, tf.float64)
-    a_real_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
-    a_imag_tf = tf.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=tf.float64)
-    a_tf = tf.complex(a_real_tf, a_imag_tf)
-    tau_tf = tf.random.uniform((batch_size, num_rx, num_tx, num_paths), dtype=tf.float64)
+    frequencies_torch = torch.linspace(-fft_size // 2, fft_size // 2 - 1, fft_size)
+    frequencies_torch = torch.cast(frequencies_torch, torch.float64)
+    a_real_torch = torch.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=torch.float64)
+    a_imag_torch = torch.random.uniform((batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps), dtype=torch.float64)
+    a_torch = torch.complex(a_real_torch, a_imag_torch)
+    tau_torch = torch.random.uniform((batch_size, num_rx, num_tx, num_paths), dtype=torch.float64)
 
     # 将 TensorFlow 数据转换为 NumPy 数组
-    frequencies_np = frequencies_tf.numpy()
-    a_np = a_tf.numpy()
-    tau_np = tau_tf.numpy()
+    frequencies_np = frequencies_torch.numpy()
+    a_np = a_torch.numpy()
+    tau_np = tau_torch.numpy()
 
 
     # 将 NumPy 数组转换为 PyTorch 张量
@@ -213,7 +213,7 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
     """ import numpy as np
     def test_cir_to_time_channel():
         #设置种子
-        tf.random.set_seed(GLOBAL_SEED_NUMBER)
+        torch.random.set_seed(GLOBAL_SEED_NUMBER)
 
         # 示例参数
         bandwidth = 20e6  # 20 MHz
@@ -228,15 +228,15 @@ def cir_to_time_channel(bandwidth, a, tau, l_min, l_max, normalize=False):
         num_time_steps = 10
 
         # 随机生成路径系数（复数）
-        a_tf = tf.complex(tf.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]),
-                    tf.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]))
+        a_torch = torch.complex(torch.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]),
+                    torch.random.normal([batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps]))
 
         # 随机生成路径延迟（实数）
-        tau_tf = tf.random.uniform([batch_size, num_rx, num_tx, num_paths])
+        tau_torch = torch.random.uniform([batch_size, num_rx, num_tx, num_paths])
 
         #将 TensorFlow 数据转换为 NumPy 数组
-        a_np = a_tf.numpy()
-        tau_np = tau_tf.numpy()
+        a_np = a_torch.numpy()
+        tau_np = tau_torch.numpy()
         # 将 NumPy 数组转换为 PyTorch 张量
         a = torch.from_numpy(a_np)
         tau = torch.from_numpy(tau_np)
@@ -426,7 +426,7 @@ def one_ring_corr_mat(phi_deg, num_ant, d_h=0.5, sigma_phi_deg=15, dtype=torch.c
 
     Input
     -----
-    phi_deg : [n_0, ..., n_k], tf.float
+    phi_deg : [n_0, ..., n_k], torch.float
         A tensor of arbitrary rank containing azimuth angles (deg) of arrival.
 
     num_ant : int
@@ -439,7 +439,7 @@ def one_ring_corr_mat(phi_deg, num_ant, d_h=0.5, sigma_phi_deg=15, dtype=torch.c
         Angular standard deviation (deg). Defaults to 15 (deg). Values greater
         than 15 should not be used as the approximation becomes invalid.
 
-    dtype : tf.complex64, tf.complex128
+    dtype : torch.complex64, torch.complex128
         The dtype of the output.
 
     Output
@@ -515,4 +515,71 @@ def wrap_angle_0_360(angle):
     """
     return torch.fmod(angle, 360.)
 
+def sample_bernoulli(shape, p, dtype=torch.float32):
+    r"""
+    Sample a tensor with shape ``shape`` from a Bernoulli distribution with
+    probability ``p``
 
+    Input
+    --------
+    shape : Tensor shape
+        Shape of the tensor to sample
+
+    p : Broadcastable with ``shape``, torch.float
+        Probability
+
+    dtype : torch.DType
+        Datatype to use for internal processing and output.
+
+    Output
+    --------
+    : Tensor of shape ``shape``, bool
+        Binary samples
+    """
+    z = torch.rand(shape=shape, dtype=dtype)
+    z = torch.less(z, p)
+    return z
+
+def sample_bernoulli(shape, p, dtype=torch.float32):
+    r"""
+    Sample a tensor with shape ``shape`` from a Bernoulli distribution with
+    probability ``p``
+
+    Input
+    --------
+    shape : tuple
+        Shape of the tensor to sample
+
+    p : float or tensor
+        Probability
+
+    dtype : torch.dtype
+        Datatype to use for internal processing and output.
+
+    Output
+    --------
+    : torch.Tensor of shape ``shape``, torch.bool
+        Binary samples
+    """
+    # Generate random values uniformly distributed in [0, 1)
+    z = torch.rand(shape, dtype=dtype)
+    
+    # Compare with the probability to get binary samples
+    z = torch.less(z, p)
+    return z
+
+def rad_2_deg(x):
+    r"""
+    Convert radian to degree
+
+    Input
+    ------
+        x : Tensor
+            Angles in radian
+
+    Output
+    -------
+        y : Tensor
+            Angles ``x`` converted to degree
+    """
+    return x*torch.tensor(180.0/PI, x.dtype)

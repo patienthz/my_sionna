@@ -1,28 +1,28 @@
 
 
 
-"""Rural macrocell (RMa) channel model from 3GPP TR38.901 specification"""
-
+"""Urban macrocell (UMa) channel model from 3GPP TR38.901 specification"""
 
 import torch
 
 from .system_level_channel import SystemLevelChannel
-from .rma_scenario import RMaScenario
+from .uma_scenario import UMaScenario
 
 
-class RMa(SystemLevelChannel):
+
+class UMa(SystemLevelChannel):
     # pylint: disable=line-too-long
-    r"""RMa(carrier_frequency, ut_array, bs_array, direction, enable_pathloss=True, enable_shadow_fading=True, always_generate_lsp=False, dtype=torch.complex64)
+    r"""UMa(carrier_frequency, o2i_model, ut_array, bs_array, direction, enable_pathloss=True, enable_shadow_fading=True, always_generate_lsp=False, dtype=torch.complex64)
 
-    Rural macrocell (RMa) channel model from 3GPP [TR38901]_ specification.
+    Urban macrocell (UMa) channel model from 3GPP [TR38901]_ specification.
 
-    Setting up a RMa model requires configuring the network topology, i.e., the
+    Setting up a UMa model requires configuring the network topology, i.e., the
     UTs and BSs locations, UTs velocities, etc. This is achieved using the
-    :meth:`~sionna.channel.tr38901.RMa.set_topology` method. Setting a different
+    :meth:`~sionna.channel.tr38901.UMa.set_topology` method. Setting a different
     topology for each batch example is possible. The batch size used when setting up the network topology
     is used for the link simulations.
 
-    The following code snippet shows how to setup an RMa channel model assuming
+    The following code snippet shows how to setup an UMa channel model assuming
     an OFDM waveform:
 
     >>> # UT and BS panel arrays
@@ -38,8 +38,9 @@ class RMa(SystemLevelChannel):
     ...                       polarization_type = 'V',
     ...                       antenna_pattern = 'omni',
     ...                       carrier_frequency = 3.5e9)
-    >>> # Instantiating RMa channel model
-    >>> channel_model = RMa(carrier_frequency = 3.5e9,
+    >>> # Instantiating UMa channel model
+    >>> channel_model = UMa(carrier_frequency = 3.5e9,
+    ...                     o2i_model = 'low',
     ...                     ut_array = ut_array,
     ...                     bs_array = bs_array,
     ...                     direction = 'uplink')
@@ -65,7 +66,13 @@ class RMa(SystemLevelChannel):
     -----------
 
     carrier_frequency : float
-        Carrier frequency [Hz]
+        Carrier frequency in Hertz
+
+    o2i_model : str
+        Outdoor-to-indoor loss model for UTs located indoor.
+        Set this parameter to "low" to use the low-loss model, or to "high"
+        to use the high-loss model.
+        See section 7.4.3 of [TR38901]_ for details.
 
     rx_array : PanelArray
         Panel array used by the receivers. All receivers share the same
@@ -84,12 +91,6 @@ class RMa(SystemLevelChannel):
     enable_shadow_fading : bool
         If `True`, apply shadow fading. Otherwise doesn't.
         Defaults to `True`.
-
-    average_street_width : float
-        Average street width [m]. Defaults to 5m.
-
-    average_street_width : float
-        Average building height [m]. Defaults to 20m.
 
     always_generate_lsp : bool
         If `True`, new large scale parameters (LSPs) are generated for every
@@ -119,14 +120,13 @@ class RMa(SystemLevelChannel):
             Path delays [s]
     """
 
-    def __init__(self, carrier_frequency, ut_array, bs_array,
+    def __init__(self, carrier_frequency, o2i_model, ut_array, bs_array,
         direction, enable_pathloss=True, enable_shadow_fading=True,
-        average_street_width=20.0, average_building_height=5.0,
         always_generate_lsp=False, dtype=torch.complex64):
 
         # RMa scenario
-        scenario = RMaScenario(carrier_frequency, ut_array, bs_array,
-            direction, enable_pathloss, enable_shadow_fading,
-            average_street_width, average_building_height, dtype)
+        scenario = UMaScenario(carrier_frequency, o2i_model, ut_array, bs_array,
+                               direction, enable_pathloss, enable_shadow_fading,
+                               dtype)
 
         super().__init__(scenario, always_generate_lsp)
