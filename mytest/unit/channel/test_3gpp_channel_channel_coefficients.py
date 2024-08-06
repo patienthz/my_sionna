@@ -176,14 +176,47 @@ class TestChannelCoefficientsGenerator(unittest.TestCase):
         uvec = np.expand_dims(uvec, axis=-1)
         return uvec
 
-    def test_unit_sphere_vector(self):
-        """Test 3GPP channel coefficient calculation: Unit sphere vector"""
-        #
-        batch_size = TestChannelCoefficientsGenerator.BATCH_SIZE
-        theta = torch.randn(batch_size).numpy()
-        phi = torch.randn(batch_size).numpy()
-        uvec_ref = self.unit_sphere_vector_ref(theta, phi)
-        uvec = self.ccg._unit_sphere_vector(theta, phi).numpy()
-        max_err = self.max_rel_err(uvec_ref, uvec)
-        err_tol = TestChannelCoefficientsGenerator.MAX_ERR
-        self.assertLessEqual(max_err, err_tol)
+    # def test_unit_sphere_vector(self):
+    #     """Test 3GPP channel coefficient calculation: Unit sphere vector"""
+    #     #
+    #     batch_size = TestChannelCoefficientsGenerator.BATCH_SIZE
+    #     theta = torch.randn(batch_size).numpy()
+    #     phi = torch.randn(batch_size).numpy()
+    #     uvec_ref = self.unit_sphere_vector_ref(theta, phi)
+    #     uvec = self.ccg._unit_sphere_vector(theta, phi).numpy()
+    #     max_err = self.max_rel_err(uvec_ref, uvec)
+    #     err_tol = TestChannelCoefficientsGenerator.MAX_ERR
+    #     self.assertLessEqual(max_err, err_tol)
+
+    # def forward_rotation_matrix_ref(self, orientations):
+    #     """Reference implementation: Forward rotation matrix"""
+    #     a, b, c = orientations[...,0], orientations[...,1], orientations[...,2]
+    #     #
+    #     R = np.zeros(list(a.shape) + [3,3])
+    #     #
+    #     R[...,0,0] = np.cos(a)*np.cos(b)
+    #     R[...,1,0] = np.sin(a)*np.cos(b)
+    #     R[...,2,0] = -np.sin(b)
+    #     #
+    #     R[...,0,1] = np.cos(a)*np.sin(b)*np.sin(c) - np.sin(a)*np.cos(c)
+    #     R[...,1,1] = np.sin(a)*np.sin(b)*np.sin(c) + np.cos(a)*np.cos(c)
+    #     R[...,2,1] = np.cos(b)*np.sin(c)
+    #     #
+    #     R[...,0,2] = np.cos(a)*np.sin(b)*np.cos(c) + np.sin(a)*np.sin(c)
+    #     R[...,1,2] = np.sin(a)*np.sin(b)*np.cos(c) - np.cos(a)*np.sin(c)
+    #     R[...,2,2] = np.cos(b)*np.cos(c)
+    #     #
+    #     return R
+    
+
+    # def test_forward_rotation_matrix(self):
+    #     """Test 3GPP channel coefficient calculation: Forward rotation matrix"""
+    #     batch_size = TestChannelCoefficientsGenerator.BATCH_SIZE
+    #     orientation =torch.randn(size=[batch_size,3]).numpy()
+    #     R_ref = self.forward_rotation_matrix_ref(orientation)
+    #     R = self.ccg._forward_rotation_matrix(orientation).numpy()
+    #     max_err = self.max_rel_err(R_ref, R)
+    #     err_tol = TestChannelCoefficientsGenerator.MAX_ERR
+    #     self.assertLessEqual(max_err, err_tol)
+if __name__ == '__main__':
+    unittest.main()

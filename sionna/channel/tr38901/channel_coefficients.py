@@ -316,6 +316,7 @@ class ChannelCoefficientsGenerator:
 
         rho_hat = self._unit_sphere_vector(theta, phi)
         rot_inv = self._reverse_rotation_matrix(orientations)
+
         rot_rho = tf.matmul(rot_inv, rho_hat)
         v1 = tf.constant([0,0,1], self._dtype.real_dtype)
         v1 = tf.reshape(v1, [1]*(rot_rho.shape.rank-1)+[3])

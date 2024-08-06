@@ -251,3 +251,6 @@ class TestCDL(unittest.TestCase):
         ref_a = CDL_XPR[model]
         max_err = np.max(np.abs(ref_a - a))
         self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+
+if __name__ == '__main__':
+    unittest.main() 

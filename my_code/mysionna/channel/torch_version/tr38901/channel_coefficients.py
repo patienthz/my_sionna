@@ -336,7 +336,7 @@ class ChannelCoefficientsGenerator:
             Inverse of the rotation matrix corresponding to ``orientations``
         """
         rot_mat = self._forward_rotation_matrix(orientations)
-        rot_mat_inv = rot_mat.T
+        rot_mat_inv = torch.transpose(rot_mat,-2,-1)
         return rot_mat_inv
 
     def _gcs_to_lcs(self, orientations, theta, phi):
@@ -376,7 +376,7 @@ class ChannelCoefficientsGenerator:
         z = torch.clamp(z, torch.tensor(-1., dtype=self._real_dtype),
                              torch.tensor(1., dtype=self._real_dtype))
         theta_prime = acos(z)
-        phi_prime = torch.angle((torch.matmul(v2, rot_rho.to(dtype=self._real_dtype))))
+        phi_prime = torch.angle((torch.matmul(v2, rot_rho.to(dtype=self._dtype))))
         theta_prime = torch.squeeze(theta_prime, dim=[phi.dim(),
             phi.dim()+1])
         phi_prime = torch.squeeze(phi_prime, dim=[phi.dim(),
@@ -467,7 +467,7 @@ class ChannelCoefficientsGenerator:
         # Get antenna element positions in LCS and reshape for broadcasting
         tx_ant_pos_lcs = self._tx_array.ant_pos
         tx_ant_pos_lcs = torch.reshape(tx_ant_pos_lcs,
-            [1,1]+tx_ant_pos_lcs.shape+[1])
+            [1,1]+list(tx_ant_pos_lcs.shape)+[1])
 
         # Compute antenna element positions in GCS
         tx_ant_pos_gcs = self._rot_pos(tx_orientations, tx_ant_pos_lcs)
@@ -499,7 +499,7 @@ class ChannelCoefficientsGenerator:
         # Get antenna element positions in LCS and reshape for broadcasting
         rx_ant_pos_lcs = self._rx_array.ant_pos
         rx_ant_pos_lcs = torch.reshape(rx_ant_pos_lcs,
-            [1,1]+rx_ant_pos_lcs.shape+[1])
+            [1,1]+list(rx_ant_pos_lcs.shape)+[1])
 
         # Compute antenna element positions in GCS
         rx_ant_pos_gcs = self._rot_pos(rx_orientations, rx_ant_pos_lcs)
@@ -551,7 +551,7 @@ class ChannelCoefficientsGenerator:
         """
         xpr = rays.xpr
 
-        xpr_scaling = torch.complex(torch.sqrt(1/xpr),
+        xpr_scaling = torch.complex(torch.sqrt(1/xpr.to(self._real_dtype)),
             torch.tensor(0., dtype=self._real_dtype))
         e0 = torch.exp(torch.complex(torch.tensor(0., dtype=self._real_dtype),
             phi[...,0]))
@@ -561,8 +561,8 @@ class ChannelCoefficientsGenerator:
                                 dtype=self._real_dtype), phi[...,1]))
         e2 = xpr_scaling*torch.exp(torch.complex(torch.tensor(0.,
                                 dtype=self._real_dtype), phi[...,2]))
-        shape = torch.cat([e0.shape, [2,2]], dim=-1)
-        h_phase = torch.reshape(torch.stack([e0, e1, e2, e3], dim=-1), shape)
+        shape = torch.cat([torch.tensor(e0.shape), torch.tensor([2,2])], dim=-1).tolist()
+        h_phase = torch.reshape(torch.stack([e0, e1, e2, e3], dim=-1), tuple(shape))
 
         return h_phase
     
@@ -654,9 +654,9 @@ class ChannelCoefficientsGenerator:
         lambda_0 = self._lambda_0
 
         r_hat_rx = self._unit_sphere_vector(zoa, aoa)
-        r_hat_rx = torch.squeeze(r_hat_rx, dim=r_hat_rx.shape.rank-1)
+        r_hat_rx = torch.squeeze(r_hat_rx, dim=len(r_hat_rx.shape)-1)
         r_hat_tx = self._unit_sphere_vector(zod, aod)
-        r_hat_tx = torch.squeeze(r_hat_tx, dim=r_hat_tx.shape.rank-1)
+        r_hat_tx = torch.squeeze(r_hat_tx, dim=len(r_hat_tx.shape)-1)
         d_bar_rx = self._step_11_get_rx_antenna_positions(topology)
         d_bar_tx = self._step_11_get_tx_antenna_positions(topology)
 
@@ -672,14 +672,14 @@ class ChannelCoefficientsGenerator:
         # and will be reshaped to
         # [batch_size, num_tx, 1, 1, 1, num_tx_antennas, 3]
         s = d_bar_tx.shape
-        shape = torch.cat([s[:2], [1,1,1], s[2:]], 0)
-        d_bar_tx = torch.reshape(d_bar_tx, shape)
+        shape = list(s[:2]) + [1, 1, 1] + list(s[2:])
+        d_bar_tx = torch.reshape(d_bar_tx, tuple(shape))
 
         # d_bar_rx has shape [batch_size,    num_rx,       num_rx_antennas, 3]
         # and will be reshaped to
         # [batch_size, 1, num_rx, 1, 1, num_rx_antennas, 3]
         s = d_bar_rx.shape
-        shape = torch.cat([[s[0]], [1, s[1], 1,1], s[2:]], 0)
+        shape = [s[0], 1, s[1], 1, 1] + list(s[2:])
         d_bar_rx = torch.reshape(d_bar_rx, shape)
 
         # Compute all tensor elements
@@ -688,7 +688,7 @@ class ChannelCoefficientsGenerator:
         # in all cases, we need to do a hack here by explicitly
         # broadcasting one dimension:
         s = d_bar_rx.shape
-        shape = torch.cat([ [s[0]], [r_hat_rx.shape[1]], s[2:]], 0)
+        shape = [s[0], r_hat_rx.shape[1]] + list(s[2:])
         d_bar_rx = torch.broadcast_to(d_bar_rx, shape)
         exp_rx = 2*PI/lambda_0*torch.sum(r_hat_rx*d_bar_rx,
             dim=-1, keepdims=True)
@@ -745,14 +745,14 @@ class ChannelCoefficientsGenerator:
 
         # Transform departure angles to the LCS
         s = tx_orientations.shape
-        shape = torch.cat([s[:2], [1,1,1,s[-1]]], 0)
-        tx_orientations = torch.reshape(tx_orientations, shape)
+        shape = torch.cat([torch.tensor(s[:2]), torch.tensor([1,1,1,s[-1]])], 0).tolist()
+        tx_orientations = torch.reshape(tx_orientations, tuple(shape))
         zod_prime, aod_prime = self._gcs_to_lcs(tx_orientations, zod, aod)
 
         # Transform arrival angles to the LCS
         s = rx_orientations.shape
-        shape = torch.cat([[s[0],1],[s[1],1,1,s[-1]]], 0)
-        rx_orientations = torch.reshape(rx_orientations, shape)
+        shape = torch.cat([torch.tensor([s[0],1]),torch.tensor([s[1],1,1,s[-1]])], 0).tolist()
+        rx_orientations = torch.reshape(rx_orientations, tuple(shape))
         zoa_prime, aoa_prime = self._gcs_to_lcs(rx_orientations, zoa, aoa)
 
         # Compute transmitted and received field strength for all antennas
@@ -790,9 +790,8 @@ class ChannelCoefficientsGenerator:
         num_ant_tx = self._tx_array.num_ant
         if self._tx_array.polarization == 'single':
             # Each BS antenna gets the polarization 1 response
-            f_tx_array = torch.tile(torch.unsqueeze(pol1_tx, 0),
-                torch.cat([[num_ant_tx], torch.ones([pol1_tx.dim()], torch.int32)],
-                dim=0))
+            dim_array = torch.cat([torch.tensor([num_ant_tx]), torch.ones([pol1_tx.dim()], dtype=torch.int32)], dim=0).tolist()
+            f_tx_array = torch.tile(torch.unsqueeze(pol1_tx, 0),dims=tuple(dim_array))
         else:
             # Assign polarization reponse according to polarization to each
             # antenna
@@ -809,9 +808,8 @@ class ChannelCoefficientsGenerator:
         num_ant_rx = self._rx_array.num_ant
         if self._rx_array.polarization == 'single':
             # Each UT antenna gets the polarization 1 response
-            f_rx_array = torch.tile(torch.unsqueeze(f_rx_pol1, 0),
-                torch.cat([[num_ant_rx], torch.ones([f_rx_pol1.dim()],
-                                                 torch.int32)], dim=0))
+            dim_arr = torch.cat([torch.tensor([num_ant_tx]), torch.ones([pol1_tx.dim()], dtype=torch.int32)], dim=0).tolist()
+            f_rx_array = torch.tile(torch.unsqueeze(f_rx_pol1, 0),tuple(dim_arr))
             f_rx_array = torch.complex(f_rx_array,
                                     torch.tensor(0.,  dtype=self._real_dtype))
         else:
@@ -871,11 +869,11 @@ class ChannelCoefficientsGenerator:
         h_full = (h_field * h_array).unsqueeze(-1) * h_doppler.unsqueeze(-2).unsqueeze(-2)
 
         real = torch.sqrt(rays.powers / h_full.size(4)).to(self._real_dtype)
-        img = torch.tensor(0.,self._real_dtype)
+        img = torch.tensor(0.,dtype=self._real_dtype)
         power_scaling = torch.complex(real,img)
-        shape = torch.cat([power_scaling.shape, torch.ones(
-            [h_full.dim()-power_scaling.dim()], dtype=torch.int32)], 0)  
-        h_full *= torch.reshape(power_scaling, shape)      
+        shape = torch.cat([torch.tensor(power_scaling.shape, dtype=torch.int32),
+                           torch.ones(h_full.dim() - power_scaling.dim(), dtype=torch.int32)], 0).tolist()
+        h_full *= torch.reshape(power_scaling, tuple(shape))      
         return h_full
 
     def _step_11_reduce_nlos(self, h_full, rays, c_ds):
@@ -999,7 +997,7 @@ class ChannelCoefficientsGenerator:
         # Field matrix
         h_phase = torch.reshape(torch.tensor([[1.,0.],
                                          [0.,-1.]],
-                                         self._dtype),
+                                         dtype=self._dtype),
                                          [1,1,1,1,1,2,2])
         h_field = self._step_11_field_matrix(topology, aoa, aod, zoa, zod,
                                                                     h_phase)
@@ -1014,7 +1012,7 @@ class ChannelCoefficientsGenerator:
         d3d = topology.distance_3d
         lambda_0 = self._lambda_0
         h_delay = torch.exp(torch.complex(torch.tensor(0.,
-                        self._real_dtype), 2*PI*d3d/lambda_0))
+                        dtype=self._real_dtype), 2*PI*d3d/lambda_0))
 
         # Combining all to compute channel coefficient
         h_field = torch.unsqueeze(torch.squeeze(h_field, dim=4), dim=-1)
@@ -1058,10 +1056,11 @@ class ChannelCoefficientsGenerator:
         ####  LoS scenario
 
         h_los_los_comp = self._step_11_los(topology, t)
-        k_factor = torch.reshape(k_factor, torch.cat([k_factor.shape,
-            torch.ones([h_los_los_comp.dim()-k_factor.dim()], torch.int32)],0))
+        shape = torch.cat([torch.tensor(k_factor.shape), torch.ones([h_los_los_comp.dim() - k_factor.dim()],dtype = torch.int32)], 0).tolist()
+        k_factor = torch.reshape(k_factor,tuple(shape) )
+
         k_factor = torch.complex(k_factor, torch.tensor(0.,
-                                            self._real_dtype))
+                                            dtype=self._real_dtype))
 
         # Scale NLOS and LOS components according to K-factor
         h_los_los_comp = h_los_los_comp*torch.sqrt(k_factor/(k_factor+1))
@@ -1075,8 +1074,9 @@ class ChannelCoefficientsGenerator:
         h_los = torch.cat([h_los_cl, h_los_nlos_comp[:,:,:,1:,...]], dim=3)
 
         #### LoS or NLoS CIR according to link configuration
-        los_indicator = torch.reshape(topology.los,
-            torch.cat([topology.los.shape, [1,1,1,1]], dim=0))
+        shape =torch.cat([torch.tensor(topology.los.shape), torch.tensor([1,1,1,1])], dim=0).tolist()
+        los_indicator = torch.reshape(topology.los, tuple(shape)).bool()
+
         h = torch.where(los_indicator, h_los, h_nlos)
 
         return h, delays_nlos

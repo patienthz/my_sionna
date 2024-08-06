@@ -21,8 +21,10 @@ from .rays import Rays
 from . import models
 
 def gather_pytorch(input_data, indices=None, batch_dims=0, axis=0):
-    input_data = torch.tensor(input_data)
-    indices = torch.tensor(indices)
+    if not isinstance(input_data,torch.Tensor):
+        input_data = torch.tensor(input_data)
+    if not isinstance(indices, torch.Tensor):
+        indices = torch.tensor(indices)
     if batch_dims == 0:
         if axis < 0:
             axis = len(input_data.shape) + axis
@@ -647,7 +649,7 @@ class CDL(ChannelModel):
             The tensor ``array`` expanded with 3 dimensions for the batch,
             number of tx, and number of rx.
         """
-        if isinstance(array,torch.Tensor):
+        if not isinstance(array,torch.Tensor):
             array = torch.tensor(array)
         array_rank = array.dim()
         tiling = torch.tensor([1, 1, 1], dtype=torch.int32)
@@ -678,7 +680,7 @@ class CDL(ChannelModel):
 
         # Create randomly shuffled indices by arg-sorting samples from a random
         # normal distribution
-        if isinstance(angles,torch.Tensor):
+        if not isinstance(angles,torch.Tensor):
             angles = torch.tensor(angles)
         random_numbers = torch.randn_like(angles)
         shuffled_indices = torch.argsort(random_numbers)

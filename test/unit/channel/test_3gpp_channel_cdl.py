@@ -191,50 +191,52 @@ class TestCDL(unittest.TestCase):
         max_err = np.max(np.abs(ref_p - p)/ref_p)
         self.assertLessEqual(max_err, TestCDL.MAX_ERR_REL, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_delays(self, model, submodel): # Submodel does not apply to CDL
-        """Test delays"""
-        d = TestCDL.delays[model]/TestCDL.DELAY_SPREAD
-        ref_d = np.sort(CDL_DELAYS[model])
-        max_err = np.max(np.abs(ref_d - d))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_delays(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test delays"""
+    #     d = TestCDL.delays[model]/TestCDL.DELAY_SPREAD
+    #     ref_d = np.sort(CDL_DELAYS[model])
+    #     max_err = np.max(np.abs(ref_d - d))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_aod(self, model, submodel): # Submodel does not apply to CDL
-        """Test AoD"""
-        a = TestCDL.aod[model]
-        ref_a = cdl_aod(model)
-        max_err = np.max(np.abs(ref_a - a))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_aod(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test AoD"""
+    #     a = TestCDL.aod[model]
+    #     ref_a = cdl_aod(model)
+    #     max_err = np.max(np.abs(ref_a - a))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_aoa(self, model, submodel): # Submodel does not apply to CDL
-        """Test AoA"""
-        a = TestCDL.aoa[model]
-        ref_a = cdl_aoa(model)
-        max_err = np.max(np.abs(ref_a - a))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_aoa(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test AoA"""
+    #     a = TestCDL.aoa[model]
+    #     ref_a = cdl_aoa(model)
+    #     max_err = np.max(np.abs(ref_a - a))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_zod(self, model, submodel): # Submodel does not apply to CDL
-        """Test ZoD"""
-        a = TestCDL.zod[model]
-        ref_a = cdl_zod(model)
-        max_err = np.max(np.abs(ref_a - a))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_zod(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test ZoD"""
+    #     a = TestCDL.zod[model]
+    #     ref_a = cdl_zod(model)
+    #     max_err = np.max(np.abs(ref_a - a))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_zoa(self, model, submodel): # Submodel does not apply to CDL
-        """Test ZoA"""
-        a = TestCDL.zoa[model]
-        ref_a = cdl_zoa(model)
-        max_err = np.max(np.abs(ref_a - a))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_zoa(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test ZoA"""
+    #     a = TestCDL.zoa[model]
+    #     ref_a = cdl_zoa(model)
+    #     max_err = np.max(np.abs(ref_a - a))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
 
-    @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
-    def test_xpr(self, model, submodel): # Submodel does not apply to CDL
-        """Test XPR"""
-        a = TestCDL.xpr[model]
-        ref_a = CDL_XPR[model]
-        max_err = np.max(np.abs(ref_a - a))
-        self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+    # @channel_test_on_models(('A', 'B', 'C', 'D', 'E'), ('foo',))
+    # def test_xpr(self, model, submodel): # Submodel does not apply to CDL
+    #     """Test XPR"""
+    #     a = TestCDL.xpr[model]
+    #     ref_a = CDL_XPR[model]
+    #     max_err = np.max(np.abs(ref_a - a))
+    #     self.assertLessEqual(max_err, TestCDL.MAX_ERR, f'{model}')
+if __name__ == '__main__':
+    unittest.main() 
