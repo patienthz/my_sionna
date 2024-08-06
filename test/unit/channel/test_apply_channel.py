@@ -121,3 +121,6 @@ class TestApplyOFDMChannel(unittest.TestCase):
                             x_ = x[b]
                             y_ref[b,rx,ra] += np.sum(x_*h_, axis=(0,1))
                 self.assertTrue(np.allclose(y_ref, y, atol=1e-5))
+
+if __name__ == '__main__':
+    unittest.main()

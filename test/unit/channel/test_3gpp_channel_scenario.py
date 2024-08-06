@@ -149,3 +149,7 @@ class TestScenario(unittest.TestCase):
         param_tensor = self.scenario.get_param('muDSc').numpy()
         max_err = np.max(np.abs(param_tensor-param_tensor_ref))
         self.assertLessEqual(max_err, 1e-6)
+
+
+if __name__=='__main__':
+    unittest.main()
