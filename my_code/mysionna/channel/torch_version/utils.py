@@ -4,6 +4,27 @@ import warnings
 from my_code.mysionna.utils import expand_to_rank
 from my_code.mysionna import PI
 
+def gather_pytorch(input_data, indices=None, batch_dims=0, axis=0):
+    input_data = torch.tensor(input_data)
+    indices = torch.tensor(indices)
+    if batch_dims == 0:
+        if axis < 0:
+            axis = len(input_data.shape) + axis
+        data = torch.index_select(input_data, axis, indices.flatten())
+        shape_input = list(input_data.shape)
+        # shape_ = delete(shape_input, axis)
+        # 连接列表
+        shape_output = shape_input[:axis] + \
+            list(indices.shape) + shape_input[axis + 1:]
+        data_output = data.reshape(shape_output)
+        return data_output
+    else:
+        data_output = []
+        for data,ind in zip(input_data, indices):
+            r = gather_pytorch(data, ind, batch_dims=batch_dims-1)
+            data_output.append(r)
+        return torch.stack(data_output)
+
 
 def subcarrier_frequencies(num_subcarriers, subcarrier_spacing, dtype=torch.complex64):
     """
@@ -540,34 +561,6 @@ def sample_bernoulli(shape, p, dtype=torch.float32):
     z = torch.less(z, p)
     return z
 
-def sample_bernoulli(shape, p, dtype=torch.float32):
-    r"""
-    Sample a tensor with shape ``shape`` from a Bernoulli distribution with
-    probability ``p``
-
-    Input
-    --------
-    shape : tuple
-        Shape of the tensor to sample
-
-    p : float or tensor
-        Probability
-
-    dtype : torch.dtype
-        Datatype to use for internal processing and output.
-
-    Output
-    --------
-    : torch.Tensor of shape ``shape``, torch.bool
-        Binary samples
-    """
-    # Generate random values uniformly distributed in [0, 1)
-    z = torch.rand(shape, dtype=dtype)
-    
-    # Compare with the probability to get binary samples
-    z = torch.less(z, p)
-    return z
-
 def rad_2_deg(x):
     r"""
     Convert radian to degree
@@ -583,3 +576,939 @@ def rad_2_deg(x):
             Angles ``x`` converted to degree
     """
     return x*torch.tensor(180.0/PI, x.dtype)
+
+def time_frequency_vector(num_samples, sample_duration, dtype=torch.float32):
+    # pylint: disable=line-too-long
+    r"""
+    Compute the time and frequency vector for a given number of samples
+    and duration per sample in normalized time unit.
+
+    >>> t = torch.cast(torch.linspace(-n_min, n_max, num_samples), dtype) * sample_duration
+    >>> f = torch.cast(torch.linspace(-n_min, n_max, num_samples), dtype) * 1/(sample_duration*num_samples)
+
+    Input
+    ------
+        num_samples : int
+            Number of samples
+
+        sample_duration : float
+            Sample duration in normalized time
+
+        dtype : torch.DType
+            Datatype to use for internal processing and output.
+            Defaults to `torch.float32`.
+
+    Output
+    ------
+        t : [``num_samples``], ``dtype``
+            Time vector
+
+        f : [``num_samples``], ``dtype``
+            Frequency vector
+    """
+
+    num_samples = int(num_samples)
+
+    if num_samples % 2 == 0:  # 如果样本数为偶数
+        n_min = torch.tensor(-(num_samples) / 2, dtype=torch.int32)
+        n_max = torch.tensor((num_samples) / 2 - 1, dtype=torch.int32)
+    else:  # 如果样本数为奇数
+        n_min = torch.tensor(-(num_samples-1) / 2, dtype=torch.int32)
+        n_max = torch.tensor((num_samples+1) / 2 - 1, dtype=torch.int32)
+
+    # 时间向量
+    t = torch.linspace(n_min, n_max, num_samples, dtype=dtype) \
+        * torch.tensor(sample_duration, dtype=dtype)
+
+    # 频率向量
+    df = torch.tensor(1.0/sample_duration, dtype=dtype)/torch.tensor(num_samples, dtype=dtype)
+    f = torch.linspace(n_min, n_max, num_samples, dtype=dtype) \
+        * df
+
+    return t, f
+
+def time_to_ofdm_channel(h_t, rg, l_min):
+    r"""
+    Compute the channel frequency response from the discrete complex-baseband
+    channel impulse response.
+
+    Given a discrete complex-baseband channel impulse response
+    :math:`\bar{h}_{b,\ell}`, for :math:`\ell` ranging from :math:`L_\text{min}\le 0`
+    to :math:`L_\text{max}`, the discrete channel frequency response is computed as
+
+    .. math::
+
+        \hat{h}_{b,n} = \sum_{k=0}^{L_\text{max}} \bar{h}_{b,k} e^{-j \frac{2\pi kn}{N}} + \sum_{k=L_\text{min}}^{-1} \bar{h}_{b,k} e^{-j \frac{2\pi n(N+k)}{N}}, \quad n=0,\dots,N-1
+
+    where :math:`N` is the FFT size and :math:`b` is the time step.
+
+    This function only produces one channel frequency response per OFDM symbol, i.e.,
+    only values of :math:`b` corresponding to the start of an OFDM symbol (after
+    cyclic prefix removal) are considered.
+
+    Input
+    ------
+    h_t : [..., num_time_steps, l_max-l_min+1], torch.complex
+        Tensor of discrete complex-baseband channel impulse responses
+
+    resource_grid : ResourceGrid
+        Resource grid
+
+    l_min : int
+        Smallest time-lag for the discrete complex baseband
+        channel impulse response (:math:`L_{\text{min}}`)
+
+    Output
+    ------
+    h_f : [..., num_ofdm_symbols, fft_size], torch.complex
+        Tensor of discrete complex-baseband channel frequency responses
+    """
+
+    # Total length of an OFDM symbol including cyclic prefix
+    ofdm_length = rg.fft_size + rg.cyclic_prefix_length
+
+    # Downsample the impulse response to one sample per OFDM symbol
+    h_t = h_t[..., rg.cyclic_prefix_length:rg.num_time_samples:ofdm_length, :]
+
+    # Pad channel impulse response with zeros to the FFT size
+    pad_dims = rg.fft_size - h_t.shape[-1]
+    pad_shape = list(h_t.shape[:-1]) + [pad_dims]
+    h_t = torch.cat([h_t, torch.zeros(pad_shape, dtype=h_t.dtype, device=h_t.device)], dim=-1)
+
+    # Circular shift of negative time lags so that the channel impulse response
+    # starts with h_{b,0}
+    h_t = torch.roll(h_t, shifts=l_min, dims=-1)
+
+    # Compute FFT
+    h_f = torch.fft.fft(h_t, dim=-1)
+
+    # Move the zero subcarrier to the center of the spectrum
+    h_f = torch.fft.fftshift(h_f, dim=-1)
+
+    return h_f
+
+def drop_uts_in_sector(batch_size, num_ut, min_bs_ut_dist, isd, dtype=torch.complex64):
+    r"""
+    Uniformly sample UT locations from a sector.
+
+    The sector from which UTs are sampled is shown in the following figure.
+    The BS is assumed to be located at the origin (0,0) of the coordinate
+    system.
+
+    Input
+    --------
+    batch_size : int
+        Batch size
+
+    num_ut : int
+        Number of UTs to sample per batch example
+
+    min_bs_ut_dist : float
+        Minimum BS-UT distance [m]
+
+    isd : float
+        Inter-site distance, i.e., the distance between two adjacent BSs [m]
+
+    dtype : torch.dtype
+        Datatype to use for internal processing and output.
+        If a complex datatype is provided, the corresponding precision of
+        real components is used.
+        Defaults to `torch.complex64` (`torch.float32`).
+
+    Output
+    ------
+    ut_loc : [batch_size, num_ut, 2], torch.float
+        UTs locations in the X-Y plane
+    """
+
+    if torch.is_complex(dtype):
+        real_dtype = dtype.to_real()
+    elif torch.is_floating_point(dtype):
+        real_dtype = dtype
+    else:
+        raise AssertionError("dtype must be a complex or floating datatype")
+
+    r_min = torch.tensor(min_bs_ut_dist, dtype=real_dtype)
+
+    r = torch.tensor(isd * 0.5, dtype=real_dtype)
+
+    # Angles from (-pi/6, pi/6), covering half of the sector and denoted by
+    # alpha_half, are randomly sampled for all UTs.
+    # Then, the maximum distance UTs can be from the BS, denoted by r_max,
+    # is computed for each angle.
+    # Distance between UT - BS are then uniformly sampled from the range
+    # (r_min, r_max)
+    # Each UT is then randomly and uniformly pushed into a half of the sector
+    # by adding either PI/6 or PI/2 to the angle alpha_half
+
+    # Sample angles for half of the sector (which half will be decided randomly)
+    alpha_half = torch.rand([batch_size, num_ut], dtype=real_dtype) * (PI / 3) - (PI / 6)
+
+    # Maximum distance from BS at this angle to be in the sector
+    r_max = r / torch.cos(alpha_half)
+
+    # Randomly sample distance for the UTs
+    distance = torch.rand([batch_size, num_ut], dtype=real_dtype) * (r_max - r_min) + r_min
+
+    # Randomly assign the UTs to one of the two halves of the sector
+    side = torch.bernoulli(torch.full([batch_size, num_ut], 0.5, dtype=real_dtype)) * 2. - 1.
+    alpha = alpha_half + side * (PI / 6)
+
+    # Set UT location in X-Y coordinate system
+    ut_loc = torch.stack([distance * torch.cos(alpha),
+                          distance * torch.sin(alpha)], dim=-1)
+
+    return ut_loc
+
+def set_3gpp_scenario_parameters(scenario,
+                                 min_bs_ut_dist=None,
+                                 isd=None,
+                                 bs_height=None,
+                                 min_ut_height=None,
+                                 max_ut_height=None,
+                                 indoor_probability=None,
+                                 min_ut_velocity=None,
+                                 max_ut_velocity=None,
+                                 dtype=torch.complex64):
+    r"""
+    Set valid parameters for a specified 3GPP system level ``scenario``
+    (RMa, UMi, or UMa).
+
+    If a parameter is given, then it is returned. If it is set to `None`,
+    then a parameter valid according to the chosen scenario is returned
+    (see [TR38901]_).
+
+    Input
+    --------
+    scenario : str
+        System level model scenario. Must be one of "rma", "umi", or "uma".
+
+    min_bs_ut_dist : None or torch.Tensor
+        Minimum BS-UT distance [m]
+
+    isd : None or torch.Tensor
+        Inter-site distance [m]
+
+    bs_height : None or torch.Tensor
+        BS elevation [m]
+
+    min_ut_height : None or torch.Tensor
+        Minimum UT elevation [m]
+
+    max_ut_height : None or torch.Tensor
+        Maximum UT elevation [m]
+
+    indoor_probability : None or torch.Tensor
+        Probability of a UT to be indoor
+
+    min_ut_velocity : None or torch.Tensor
+        Minimum UT velocity [m/s]
+
+    max_ut_velocity : None or torch.Tensor
+        Maximum UT velocity [m/s]
+
+    dtype : torch.dtype
+        Datatype to use for internal processing and output.
+        If a complex datatype is provided, the corresponding precision of
+        real components is used.
+        Defaults to `torch.complex64` (`torch.float32`).
+
+    Output
+    --------
+    min_bs_ut_dist : torch.Tensor
+        Minimum BS-UT distance [m]
+
+    isd : torch.Tensor
+        Inter-site distance [m]
+
+    bs_height : torch.Tensor
+        BS elevation [m]
+
+    min_ut_height : torch.Tensor
+        Minimum UT elevation [m]
+
+    max_ut_height : torch.Tensor
+        Maximum UT elevation [m]
+
+    indoor_probability : torch.Tensor
+        Probability of a UT to be indoor
+
+    min_ut_velocity : torch.Tensor
+        Minimum UT velocity [m/s]
+
+    max_ut_velocity : torch.Tensor
+        Maximum UT velocity [m/s]
+    """
+
+    assert scenario in ('umi', 'uma', 'rma'), \
+        "`scenario` must be one of 'umi', 'uma', 'rma'"
+
+    if torch.is_complex(dtype):
+        real_dtype = dtype.to_real() 
+    elif torch.is_floating_point(dtype):
+        real_dtype = dtype
+    else:
+        raise AssertionError("dtype must be a complex or floating datatype")
+
+    # Default values for scenario parameters.
+    # From TR38.901, sections 7.2 and 7.4.
+    # All distances and heights are in meters
+    # All velocities are in meters per second.
+    default_scenario_par = {
+        'umi': {
+            'min_bs_ut_dist': torch.tensor(10.0, dtype=real_dtype),
+            'isd': torch.tensor(200.0, dtype=real_dtype),
+            'bs_height': torch.tensor(10.0, dtype=real_dtype),
+            'min_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'max_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'indoor_probability': torch.tensor(0.8, dtype=real_dtype),
+            'min_ut_velocity': torch.tensor(0.0, dtype=real_dtype),
+            'max_ut_velocity': torch.tensor(0.0, dtype=real_dtype)
+        },
+        'uma': {
+            'min_bs_ut_dist': torch.tensor(35.0, dtype=real_dtype),
+            'isd': torch.tensor(500.0, dtype=real_dtype),
+            'bs_height': torch.tensor(25.0, dtype=real_dtype),
+            'min_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'max_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'indoor_probability': torch.tensor(0.8, dtype=real_dtype),
+            'min_ut_velocity': torch.tensor(0.0, dtype=real_dtype),
+            'max_ut_velocity': torch.tensor(0.0, dtype=real_dtype)
+        },
+        'rma': {
+            'min_bs_ut_dist': torch.tensor(35.0, dtype=real_dtype),
+            'isd': torch.tensor(5000.0, dtype=real_dtype),
+            'bs_height': torch.tensor(35.0, dtype=real_dtype),
+            'min_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'max_ut_height': torch.tensor(1.5, dtype=real_dtype),
+            'indoor_probability': torch.tensor(0.5, dtype=real_dtype),
+            'min_ut_velocity': torch.tensor(0.0, dtype=real_dtype),
+            'max_ut_velocity': torch.tensor(0.0, dtype=real_dtype)
+        }
+    }
+
+    # Setting the scenario parameters
+    if min_bs_ut_dist is None:
+        min_bs_ut_dist = default_scenario_par[scenario]['min_bs_ut_dist']
+    if isd is None:
+        isd = default_scenario_par[scenario]['isd']
+    if bs_height is None:
+        bs_height = default_scenario_par[scenario]['bs_height']
+    if min_ut_height is None:
+        min_ut_height = default_scenario_par[scenario]['min_ut_height']
+    if max_ut_height is None:
+        max_ut_height = default_scenario_par[scenario]['max_ut_height']
+    if indoor_probability is None:
+        indoor_probability = default_scenario_par[scenario]['indoor_probability']
+    if min_ut_velocity is None:
+        min_ut_velocity = default_scenario_par[scenario]['min_ut_velocity']
+    if max_ut_velocity is None:
+        max_ut_velocity = default_scenario_par[scenario]['max_ut_velocity']
+
+    return (min_bs_ut_dist, isd, bs_height, min_ut_height, max_ut_height,
+            indoor_probability, min_ut_velocity, max_ut_velocity)
+
+def relocate_uts(ut_loc, sector_id, cell_loc):
+    r"""
+    Relocate the UTs by rotating them into the sector with index ``sector_id``
+    and transposing them to the cell centered on ``cell_loc``.
+
+    ``sector_id`` gives the index of the sector to which the UTs are
+    rotated to. The picture below shows how the three sectors of a cell are
+    indexed.
+
+    If ``sector_id`` is a scalar, then all UTs are relocated to the same
+    sector indexed by ``sector_id``.
+    If ``sector_id`` is a tensor, it should be broadcastable with
+    [``batch_size``, ``num_ut``], and give the sector in which each UT or
+    batch example is relocated to.
+
+    When calling the function, ``ut_loc`` gives the locations of the UTs to
+    relocate, which are all assumed to be in sector with index 0, and in the
+    cell centered on the origin (0,0).
+
+    Input
+    --------
+    ut_loc : [batch_size, num_ut, 2], torch.float
+        UTs locations in the X-Y plane
+
+    sector_id : Tensor broadcastable with [batch_size, num_ut], int
+        Indexes of the sector to which to relocate the UTs
+
+    cell_loc : Tensor broadcastable with [batch_size, num_ut], torch.float
+        Center of the cell to which to transpose the UTs
+
+    Output
+    ------
+    ut_loc : [batch_size, num_ut, 2], torch.float
+        Relocated UTs locations in the X-Y plane
+    """
+
+    # Ensure sector_id is of the same dtype as ut_loc
+    sector_id = sector_id.to(ut_loc.dtype)
+    while sector_id.dim() < 2:
+        sector_id = sector_id.unsqueeze(0)
+
+
+    # Ensure cell_loc is of the same dtype and rank as ut_loc
+    cell_loc = cell_loc.to(ut_loc.dtype)
+    while cell_loc.dim() < ut_loc.dim():
+        cell_loc = cell_loc.unsqueeze(0)  # Expand rank to match ut_loc
+
+    # Calculate the rotation angle
+    rotation_angle = sector_id * 2. * PI / 3.0
+
+    # Create the rotation matrix
+    cos_angle = torch.cos(rotation_angle)
+    sin_angle = torch.sin(rotation_angle)
+    rotation_matrix = torch.stack([cos_angle, -sin_angle, sin_angle, cos_angle], dim=-1)
+    rotation_matrix = rotation_matrix.view(*rotation_angle.shape[:-1], 2, 2)
+    rotation_matrix = torch.tensor(rotation_matrix, ut_loc.dtype)
+    
+    # Apply the rotation matrix
+    ut_loc = ut_loc.unsqueeze(-1)  # Add a dimension for matrix multiplication
+    ut_loc_rotated = torch.matmul(rotation_matrix, ut_loc).squeeze(-1)
+
+    # Translate to the BS location
+    ut_loc_rotated_translated = ut_loc_rotated + cell_loc
+
+    return ut_loc_rotated_translated
+
+def generate_uts_topology(  batch_size,
+                            num_ut,
+                            drop_area,
+                            cell_loc_xy,
+                            min_bs_ut_dist,
+                            isd,
+                            min_ut_height,
+                            max_ut_height,
+                            indoor_probability,
+                            min_ut_velocity,
+                            max_ut_velocity,
+                            dtype=torch.complex64):
+    r"""
+    Sample UTs location from a sector or a cell
+
+    Input
+    --------
+    batch_size : int
+        Batch size
+
+    num_ut : int
+        Number of UTs to sample per batch example
+
+    drop_area : str
+        'sector' or 'cell'. If set to 'sector', UTs are sampled from the
+        sector with index 0 in the figure below
+
+        .. figure:: ../figures/panel_array_sector_id.png
+            :align: center
+            :scale: 30%
+
+    Indexing of sectors
+
+    cell_loc_xy : Tensor broadcastable with[batch_size, num_ut, 3], torch.float
+        Center of the cell(s)
+
+    min_bs_ut_dist : None or torch.float
+        Minimum BS-UT distance [m]
+
+    isd : None or torch.float
+        Inter-site distance [m]
+
+    min_ut_height : None or torch.float
+        Minimum UT elevation [m]
+
+    max_ut_height : None or torch.float
+        Maximum UT elevation [m]
+
+    indoor_probability : None or torch.float
+        Probability of a UT to be indoor
+
+    min_ut_velocity : None or torch.float
+        Minimum UT velocity [m/s]
+
+    max_ut_velocity : None or torch.float
+        Maximum UT velocity [m/s]
+
+    dtype : torch.DType
+        Datatype to use for internal processing and output.
+        If a complex datatype is provided, the corresponding precision of
+        real components is used.
+        Defaults to `torch.complex64` (`torch.float32`).
+
+    Output
+    ------
+    ut_loc : [batch_size, num_ut, 3], torch.float
+        UTs locations
+
+    ut_orientations : [batch_size, num_ut, 3], torch.float
+        UTs orientations [radian]
+
+    ut_velocities : [batch_size, num_ut, 3], torch.float
+        UTs velocities [m/s]
+
+    in_state : [batch_size, num_ut], torch.float
+        Indoor/outdoor state of UTs. `True` means indoor, `False` means
+        outdoor.
+    """
+
+    assert drop_area in ('sector', 'cell'),\
+        "Drop area must be either 'sector' or 'cell'"
+
+    # 确定实际使用的数据类型
+    if torch.is_complex(dtype):
+        real_dtype = dtype.to_real() 
+    elif torch.is_floating_point(dtype):
+        real_dtype = dtype
+    else:
+        raise AssertionError("dtype must be a complex or floating datatype")
+
+    # 随机生成UT的位置
+    ut_loc_xy = drop_uts_in_sector(batch_size,
+                                   num_ut,
+                                   min_bs_ut_dist,
+                                   isd,
+                                   dtype)
+    
+    if drop_area == 'sector':
+        sectors = torch.zeros((batch_size, num_ut), dtype=torch.int32)
+    elif drop_area == 'cell':
+        sectors = torch.randint(0, 3, (batch_size, num_ut), dtype=torch.int32)
+
+    ut_loc_xy = relocate_uts(ut_loc_xy, sectors, cell_loc_xy)
+
+    ut_loc_z = torch.rand((batch_size, num_ut, 1), dtype=real_dtype) * \
+               (max_ut_height - min_ut_height) + min_ut_height
+    ut_loc = torch.cat([ut_loc_xy, ut_loc_z], dim=-1)
+
+    # 随机生成 UT 的室内/室外状态
+    in_state = torch.bernoulli(torch.full((batch_size, num_ut), indoor_probability, dtype=real_dtype))
+
+    # 随机生成 UT 的速度
+    ut_vel_angle = torch.rand((batch_size, num_ut), dtype=real_dtype) * 2 * PI - PI
+    ut_vel_norm = torch.rand((batch_size, num_ut), dtype=real_dtype) * \
+                  (max_ut_velocity - min_ut_velocity) + min_ut_velocity
+    ut_velocities = torch.stack([ut_vel_norm * torch.cos(ut_vel_angle),
+                                 ut_vel_norm * torch.sin(ut_vel_angle),
+                                 torch.zeros((batch_size, num_ut), dtype=real_dtype)],
+                                 dim=-1)
+
+    # 随机生成 UT 的方向
+    ut_bearing = torch.rand((batch_size, num_ut), dtype=real_dtype) * PI - 0.5 * PI
+    ut_downtilt = torch.rand((batch_size, num_ut), dtype=real_dtype) * PI - 0.5 * PI
+    ut_slant = torch.rand((batch_size, num_ut), dtype=real_dtype) * PI - 0.5 * PI
+    ut_orientations = torch.stack([ut_bearing, ut_downtilt, ut_slant], dim=-1)
+
+    return ut_loc, ut_orientations, ut_velocities, in_state
+
+def gen_single_sector_topology(batch_size,
+                               num_ut,
+                               scenario,
+                               min_bs_ut_dist=None,
+                               isd=None,
+                               bs_height=None,
+                               min_ut_height=None,
+                               max_ut_height=None,
+                               indoor_probability=None,
+                               min_ut_velocity=None,
+                               max_ut_velocity=None,
+                               dtype=torch.complex64):
+    r"""
+    Generate a batch of topologies consisting of a single BS located at the
+    origin and ``num_ut`` UTs randomly and uniformly dropped in a cell sector.
+
+    The following picture shows the sector from which UTs are sampled.
+
+    .. figure:: ../figures/drop_uts_in_sector.png
+        :align: center
+        :scale: 30%
+
+    UTs orientations are randomly and uniformly set, whereas the BS orientation
+    is set such that the it is oriented towards the center of the sector.
+
+    The drop configuration can be controlled through the optional parameters.
+    Parameters set to `None` are set to valid values according to the chosen
+    ``scenario`` (see [TR38901]_).
+
+    The returned batch of topologies can be used as-is with the
+    :meth:`set_topology` method of the system level models, i.e.
+    :class:`~sionna.channel.tr38901.UMi`, :class:`~sionna.channel.tr38901.UMa`,
+    and :class:`~sionna.channel.tr38901.RMa`.
+
+    Example
+    --------
+    >>> # Create antenna arrays
+    >>> bs_array = PanelArray(num_rows_per_panel = 4,
+    ...                      num_cols_per_panel = 4,
+    ...                      polarization = 'dual',
+    ...                      polarization_type = 'VH',
+    ...                      antenna_pattern = '38.901',
+    ...                      carrier_frequency = 3.5e9)
+    >>>
+    >>> ut_array = PanelArray(num_rows_per_panel = 1,
+    ...                       num_cols_per_panel = 1,
+    ...                       polarization = 'single',
+    ...                       polarization_type = 'V',
+    ...                       antenna_pattern = 'omni',
+    ...                       carrier_frequency = 3.5e9)
+    >>> # Create channel model
+    >>> channel_model = UMi(carrier_frequency = 3.5e9,
+    ...                     o2i_model = 'low',
+    ...                     ut_array = ut_array,
+    ...                     bs_array = bs_array,
+    ...                     direction = 'uplink')
+    >>> # Generate the topology
+    >>> topology = gen_single_sector_topology(batch_size = 100,
+    ...                                       num_ut = 4,
+    ...                                       scenario = 'umi')
+    >>> # Set the topology
+    >>> ut_loc, bs_loc, ut_orientations, bs_orientations, ut_velocities, in_state = topology
+    >>> channel_model.set_topology(ut_loc,
+    ...                            bs_loc,
+    ...                            ut_orientations,
+    ...                            bs_orientations,
+    ...                            ut_velocities,
+    ...                            in_state)
+    >>> channel_model.show_topology()
+
+    .. image:: ../figures/drop_uts_in_sector_topology.png
+
+    Input
+    --------
+    batch_size : int
+        Batch size
+
+    num_ut : int
+        Number of UTs to sample per batch example
+
+    scenario : str
+        System leven model scenario. Must be one of "rma", "umi", or "uma".
+
+    min_bs_ut_dist : None or torch.float
+        Minimum BS-UT distance [m]
+
+    isd : None or torch.float
+        Inter-site distance [m]
+
+    bs_height : None or torch.float
+        BS elevation [m]
+
+    min_ut_height : None or torch.float
+        Minimum UT elevation [m]
+
+    max_ut_height : None or torch.float
+        Maximum UT elevation [m]
+
+    indoor_probability : None or torch.float
+        Probability of a UT to be indoor
+
+    min_ut_velocity : None or torch.float
+        Minimum UT velocity [m/s]
+
+    max_ut_velocity : None or torch.float
+        Maximim UT velocity [m/s]
+
+    dtype : torch.DType
+        Datatype to use for internal processing and output.
+        If a complex datatype is provided, the corresponding precision of
+        real components is used.
+        Defaults to `torch.complex64` (`torch.float32`).
+
+    Output
+    ------
+    ut_loc : [batch_size, num_ut, 3], torch.float
+        UTs locations
+
+    bs_loc : [batch_size, 1, 3], torch.float
+        BS location. Set to (0,0,0) for all batch examples.
+
+    ut_orientations : [batch_size, num_ut, 3], torch.float
+        UTs orientations [radian]
+
+    bs_orientations : [batch_size, 1, 3], torch.float
+        BS orientations [radian]. Oriented towards the center of the sector.
+
+    ut_velocities : [batch_size, num_ut, 3], torch.float
+        UTs velocities [m/s]
+
+    in_state : [batch_size, num_ut], torch.float
+        Indoor/outdoor state of UTs. `True` means indoor, `False` means
+        outdoor.
+    """
+
+
+    # 设定3GPP场景参数
+    params = set_3gpp_scenario_parameters(scenario,
+                                          min_bs_ut_dist,
+                                          isd,
+                                          bs_height,
+                                          min_ut_height,
+                                          max_ut_height,
+                                          indoor_probability,
+                                          min_ut_velocity,
+                                          max_ut_velocity,
+                                          dtype)
+    min_bs_ut_dist, isd, bs_height, min_ut_height, max_ut_height,\
+    indoor_probability, min_ut_velocity, max_ut_velocity = params
+
+    real_dtype = dtype.to_real()
+    # 设置 BS 位置为 (0,0,bs_height)
+    bs_loc = torch.stack([torch.zeros((batch_size, 1), dtype=real_dtype),
+                          torch.zeros((batch_size, 1), dtype=real_dtype),
+                          torch.full((batch_size, 1), bs_height, dtype=real_dtype)], dim=-1)
+
+    # 设置 BS 的方向，使其向下倾斜朝向扇区中心
+    sector_center = (min_bs_ut_dist + 0.5 * isd) * 0.5
+    bs_downtilt = 0.5 * PI - torch.atan(sector_center / bs_height)
+    bs_yaw = torch.tensor(PI / 3.0, dtype=real_dtype)
+    bs_orientation = torch.stack([torch.full((batch_size, 1), bs_yaw, dtype=real_dtype),
+                                  torch.full((batch_size, 1), bs_downtilt, dtype=real_dtype),
+                                  torch.zeros((batch_size, 1), dtype=real_dtype)], dim=-1)
+
+    # 生成 UT 拓扑
+    ut_topology = generate_uts_topology(batch_size,
+                                        num_ut,
+                                        'sector',
+                                        torch.zeros(2, dtype=real_dtype),
+                                        min_bs_ut_dist,
+                                        isd,
+                                        min_ut_height,
+                                        max_ut_height,
+                                        indoor_probability,
+                                        min_ut_velocity,
+                                        max_ut_velocity,
+                                        dtype)
+    ut_loc, ut_orientations, ut_velocities, in_state = ut_topology
+
+    return ut_loc, bs_loc, ut_orientations, bs_orientation, ut_velocities, in_state
+
+def gen_single_sector_topology_interferers(batch_size,
+                                            num_ut,
+                                            num_interferer,
+                                            scenario,
+                                            min_bs_ut_dist=None,
+                                            isd=None,
+                                            bs_height=None,
+                                            min_ut_height=None,
+                                            max_ut_height=None,
+                                            indoor_probability=None,
+                                            min_ut_velocity=None,
+                                            max_ut_velocity=None,
+                                            dtype=torch.complex64):
+    r"""
+    Generate a batch of topologies consisting of a single BS located at the
+    origin, ``num_ut`` UTs randomly and uniformly dropped in a cell sector, and
+    ``num_interferer`` interfering UTs randomly dropped in the adjacent cells.
+
+    The following picture shows how UTs are sampled
+
+    .. figure:: ../figures/drop_uts_in_sector_interferers.png
+        :align: center
+        :scale: 30%
+
+    UTs orientations are randomly and uniformly set, whereas the BS orientation
+    is set such that it is oriented towards the center of the sector it
+    serves.
+
+    The drop configuration can be controlled through the optional parameters.
+    Parameters set to `None` are set to valid values according to the chosen
+    ``scenario`` (see [TR38901]_).
+
+    The returned batch of topologies can be used as-is with the
+    :meth:`set_topology` method of the system level models, i.e.
+    :class:`~sionna.channel.tr38901.UMi`, :class:`~sionna.channel.tr38901.UMa`,
+    and :class:`~sionna.channel.tr38901.RMa`.
+
+    In the returned ``ut_loc``, ``ut_orientations``, ``ut_velocities``, and
+    ``in_state`` tensors, the first ``num_ut`` items along the axis with index
+    1 correspond to the served UTs, whereas the remaining ``num_interferer``
+    items correspond to the interfering UTs.
+
+    Example
+    --------
+    >>> # Create antenna arrays
+    >>> bs_array = PanelArray(num_rows_per_panel = 4,
+    ...                      num_cols_per_panel = 4,
+    ...                      polarization = 'dual',
+    ...                      polarization_type = 'VH',
+    ...                      antenna_pattern = '38.901',
+    ...                      carrier_frequency = 3.5e9)
+    >>>
+    >>> ut_array = PanelArray(num_rows_per_panel = 1,
+    ...                       num_cols_per_panel = 1,
+    ...                       polarization = 'single',
+    ...                       polarization_type = 'V',
+    ...                       antenna_pattern = 'omni',
+    ...                       carrier_frequency = 3.5e9)
+    >>> # Create channel model
+    >>> channel_model = UMi(carrier_frequency = 3.5e9,
+    ...                     o2i_model = 'low',
+    ...                     ut_array = ut_array,
+    ...                     bs_array = bs_array,
+    ...                     direction = 'uplink')
+    >>> # Generate the topology
+    >>> topology = gen_single_sector_topology_interferers(batch_size = 100,
+    ...                                                   num_ut = 4,
+    ...                                                   num_interferer = 4,
+    ...                                                   scenario = 'umi')
+    >>> # Set the topology
+    >>> ut_loc, bs_loc, ut_orientations, bs_orientations, ut_velocities, in_state = topology
+    >>> channel_model.set_topology(ut_loc,
+    ...                            bs_loc,
+    ...                            ut_orientations,
+    ...                            bs_orientations,
+    ...                            ut_velocities,
+    ...                            in_state)
+    >>> channel_model.show_topology()
+
+    .. image:: ../figures/drop_uts_in_sector_topology_inter.png
+
+    Input
+    --------
+    batch_size : int
+        Batch size
+
+    num_ut : int
+        Number of UTs to sample per batch example
+
+    num_interferer : int
+        Number of interfeering UTs per batch example
+
+    scenario : str
+        System leven model scenario. Must be one of "rma", "umi", or "uma".
+
+    min_bs_ut_dist : None or torch.float
+        Minimum BS-UT distance [m]
+
+    isd : None or torch.float
+        Inter-site distance [m]
+
+    bs_height : None or torch.float
+        BS elevation [m]
+
+    min_ut_height : None or torch.float
+        Minimum UT elevation [m]
+
+    max_ut_height : None or torch.float
+        Maximum UT elevation [m]
+
+    indoor_probability : None or torch.float
+        Probability of a UT to be indoor
+
+    min_ut_velocity : None or torch.float
+        Minimum UT velocity [m/s]
+
+    max_ut_velocity : None or torch.float
+        Maximim UT velocity [m/s]
+
+    dtype : torch.DType
+        Datatype to use for internal processing and output.
+        If a complex datatype is provided, the corresponding precision of
+        real components is used.
+        Defaults to `torch.complex64` (`torch.float32`).
+
+    Output
+    ------
+    ut_loc : [batch_size, num_ut, 3], torch.float
+        UTs locations. The first ``num_ut`` items along the axis with index
+        1 correspond to the served UTs, whereas the remaining
+        ``num_interferer`` items correspond to the interfeering UTs.
+
+    bs_loc : [batch_size, 1, 3], torch.float
+        BS location. Set to (0,0,0) for all batch examples.
+
+    ut_orientations : [batch_size, num_ut, 3], torch.float
+        UTs orientations [radian]. The first ``num_ut`` items along the
+        axis with index 1 correspond to the served UTs, whereas the
+        remaining ``num_interferer`` items correspond to the interfeering
+        UTs.
+
+    bs_orientations : [batch_size, 1, 3], torch.float
+        BS orientation [radian]. Oriented towards the center of the sector.
+
+    ut_velocities : [batch_size, num_ut, 3], torch.float
+        UTs velocities [m/s]. The first ``num_ut`` items along the axis
+        with index 1 correspond to the served UTs, whereas the remaining
+        ``num_interferer`` items correspond to the interfeering UTs.
+
+    in_state : [batch_size, num_ut], torch.float
+        Indoor/outdoor state of UTs. `True` means indoor, `False` means
+        outdoor. The first ``num_ut`` items along the axis with
+        index 1 correspond to the served UTs, whereas the remaining
+        ``num_interferer`` items correspond to the interfeering UTs.
+    """
+    
+    # 设定3GPP场景参数
+    params = set_3gpp_scenario_parameters(scenario,
+                                          min_bs_ut_dist,
+                                          isd,
+                                          bs_height,
+                                          min_ut_height,
+                                          max_ut_height,
+                                          indoor_probability,
+                                          min_ut_velocity,
+                                          max_ut_velocity,
+                                          dtype)
+    min_bs_ut_dist, isd, bs_height, min_ut_height, max_ut_height,\
+    indoor_probability, min_ut_velocity, max_ut_velocity = params
+
+    real_dtype = dtype.to_real()
+
+    # 设置 BS 位置为 (0,0,bs_height)
+    bs_loc = torch.stack([torch.zeros((batch_size, 1), dtype=real_dtype),
+                          torch.zeros((batch_size, 1), dtype=real_dtype),
+                          torch.full((batch_size, 1), bs_height, dtype=real_dtype)], dim=-1)
+
+    # 设置 BS 的方向，使其向下倾斜朝向扇区中心
+    sector_center = (min_bs_ut_dist + 0.5 * isd) * 0.5
+    bs_downtilt = 0.5 * PI - torch.atan(sector_center / bs_height)
+    bs_yaw = torch.tensor(PI / 3.0, dtype=real_dtype)
+    bs_orientation = torch.stack([torch.full((batch_size, 1), bs_yaw, dtype=real_dtype),
+                                  torch.full((batch_size, 1), bs_downtilt, dtype=real_dtype),
+                                  torch.zeros((batch_size, 1), dtype=real_dtype)], dim=-1)
+
+    # 生成服务 UT 的拓扑
+    ut_topology = generate_uts_topology(batch_size,
+                                        num_ut,
+                                        'sector',
+                                        torch.zeros(2, dtype=real_dtype),
+                                        min_bs_ut_dist,
+                                        isd,
+                                        min_ut_height,
+                                        max_ut_height,
+                                        indoor_probability,
+                                        min_ut_velocity,
+                                        max_ut_velocity,
+                                        dtype)
+    ut_loc, ut_orientations, ut_velocities, in_state = ut_topology
+
+    # 生成邻近小区中的干扰 UT
+    inter_cell_center = torch.tensor([[0.0, isd],
+                                     [isd * torch.cos(PI / 6.0),
+                                      isd * torch.sin(PI / 6.0)]], dtype=real_dtype)
+    cell_index = torch.randint(0, 2, (batch_size, num_interferer), dtype=torch.int64)
+    inter_cells = gather_pytorch(inter_cell_center,cell_index)
+
+    inter_topology = generate_uts_topology(batch_size,
+                                           num_interferer,
+                                           'cell',
+                                           inter_cells,
+                                           min_bs_ut_dist,
+                                           isd,
+                                           min_ut_height,
+                                           max_ut_height,
+                                           indoor_probability,
+                                           min_ut_velocity,
+                                           max_ut_velocity,
+                                           dtype)
+    inter_loc, inter_orientations, inter_velocities, inter_in_state = inter_topology
+
+    # 合并服务 UT 和干扰 UT 的数据
+    ut_loc = torch.cat([ut_loc, inter_loc], dim=1)
+    ut_orientations = torch.cat([ut_orientations, inter_orientations], dim=1)
+    ut_velocities = torch.cat([ut_velocities, inter_velocities], dim=1)
+    in_state = torch.cat([in_state, inter_in_state], dim=1)
+
+    return ut_loc, bs_loc, ut_orientations, bs_orientation, ut_velocities, in_state
+

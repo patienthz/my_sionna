@@ -4,7 +4,7 @@
 
 """Urban microcell (UMi) channel model from 3GPP TR38.901 specification"""
 
-import tensorflow as torch
+import torch
 
 from .system_level_channel import SystemLevelChannel
 from .umi_scenario import UMiScenario
